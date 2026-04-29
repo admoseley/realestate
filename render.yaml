@@ -7,4 +7,4 @@ services:
     plan: free
     envVars:
       - key: ALLOWED_ORIGINS
-        value: https://your-site.netlify.app
+        value: https://realestate-analysis.netlify.app
