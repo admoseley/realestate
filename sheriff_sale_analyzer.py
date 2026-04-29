@@ -312,32 +312,45 @@ def fetch_ac_search(address: str, municipality: str) -> dict:
     return {}
 
 
+def _to_wprdc_parid(parcel_id: str) -> str:
+    """Convert sheriff sale parcel format '556-G-276' to WPRDC format '0556G00276000000'."""
+    parts = parcel_id.strip().split("-")
+    if len(parts) == 3:
+        return f"{parts[0].zfill(4)}{parts[1].upper()}{parts[2].zfill(5)}000000"
+    return parcel_id.replace("-", "").replace(" ", "")
+
+
 def fetch_wprdc_parcel(parcel_id: str) -> dict:
     """
     WPRDC open data: Allegheny County parcel assessments.
-    https://data.wprdc.org/dataset/property-assessments
-    Uses the CKAN API to query by parcel number (PARID).
+    Resource: 65855e14-549e-4992-b5be-d629afc676fa (current API version)
+    PARID format: '0556G00276000000' (16 chars, zero-padded from '556-G-276')
+    Key fields: FAIRMARKETTOTAL, LOCALTOTAL, YEARBLT, FINISHEDLIVINGAREA, BEDROOMS
     """
-    clean_id = parcel_id.replace("-", "").replace(" ", "")
-    # Also try formatted version: XXXX-X-NNN
-    formatted = parcel_id.strip()
-
-    base = "https://data.wprdc.org/api/3/action/datastore_search_sql"
-    sql = f"SELECT * FROM \"518b583f-7cc8-4f60-94d0-174cc98310dc\" WHERE \"PARID\" LIKE '%{formatted}%' LIMIT 1"
-    url = base + "?" + urllib.parse.urlencode({"sql": sql})
+    parid = _to_wprdc_parid(parcel_id)
+    base  = "https://data.wprdc.org/api/3/action/datastore_search"
+    params = urllib.parse.urlencode({
+        "resource_id": "65855e14-549e-4992-b5be-d629afc676fa",
+        "filters":     json.dumps({"PARID": parid}),
+        "limit":       1,
+    })
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        req = urllib.request.Request(
+            base + "?" + params,
+            headers={"User-Agent": "EstellaWilsonProperties/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
         records = data.get("result", {}).get("records", [])
         if records:
             r = records[0]
             return {
-                "assessed_value": float(r.get("ASSESSEDVALUE") or r.get("TOTALVALUE") or 0),
-                "fair_market":    float(r.get("FAIRMARKETVALUE") or r.get("ASSESSEDVALUE") or 0),
-                "year_built":     str(r.get("YEARBLT") or ""),
+                "fair_market":    float(r.get("FAIRMARKETTOTAL") or 0) or None,
+                "assessed_value": float(r.get("LOCALTOTAL") or r.get("COUNTYTOTAL") or 0) or None,
+                "year_built":     str(r.get("YEARBLT") or "") or None,
                 "sqft":           int(float(r.get("FINISHEDLIVINGAREA") or 0)) or None,
                 "bedrooms":       int(float(r.get("BEDROOMS") or 0)) or None,
+                "parcel_id":      r.get("PARID", parcel_id),
             }
     except Exception:
         pass

@@ -96,6 +96,9 @@ def _run_pipeline(job_id: str, pdf_source: str, is_url: bool,
         for prop in fc_props:
             fmv = prop.fair_market or prop.assessed_value
             if not fmv:
+                # Enrichment found nothing — use min_bid as conservative FMV estimate
+                fmv = prop.min_bid or prop.tax_bid
+            if not fmv:
                 continue
             d = Deal(
                 sale_id      = prop.sale_id,

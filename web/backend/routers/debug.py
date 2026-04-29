@@ -15,7 +15,7 @@ from fastapi.responses import PlainTextResponse
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from sheriff_sale_analyzer import pdf_to_text, parse_sheriff_text, enrich_property
+from sheriff_sale_analyzer import pdf_to_text, parse_sheriff_text, enrich_property, fetch_wprdc_parcel, fetch_ac_assessment, fetch_ac_search
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 
@@ -126,7 +126,35 @@ async def debug_analyze_pdf(file: UploadFile = File(...)):
         log("  No F&C properties to enrich.")
     else:
         for i, prop in enumerate(fc_props):
-            log(f"\n  [{i+1}] {prop.address}")
+            log(f"\n  [{i+1}] {prop.address}  (parcel: {prop.parcel_id})")
+
+            # Test WPRDC directly and log raw response
+            if prop.parcel_id:
+                log(f"       → Testing WPRDC fetch_wprdc_parcel({prop.parcel_id!r})")
+                try:
+                    wprdc_result = fetch_wprdc_parcel(prop.parcel_id)
+                    log(f"         raw result: {wprdc_result!r}")
+                except Exception:
+                    log(f"         EXCEPTION: {traceback.format_exc().splitlines()[-1]}")
+
+            # Test AC assessment directly
+            log(f"       → Testing AC fetch_ac_assessment({prop.parcel_id!r})")
+            try:
+                ac_result = fetch_ac_assessment(prop.parcel_id)
+                log(f"         raw result: {ac_result!r}")
+            except Exception:
+                log(f"         EXCEPTION: {traceback.format_exc().splitlines()[-1]}")
+
+            # Test AC search directly
+            log(f"       → Testing AC fetch_ac_search({prop.address[:40]!r}, {prop.municipality!r})")
+            try:
+                search_result = fetch_ac_search(prop.address, prop.municipality)
+                log(f"         raw result: {search_result!r}")
+            except Exception:
+                log(f"         EXCEPTION: {traceback.format_exc().splitlines()[-1]}")
+
+            # Now run the full enrich_property
+            log(f"       → Running enrich_property()…")
             try:
                 enrich_property(prop)
                 log(f"       fair_market    : {prop.fair_market!r}")
