@@ -1,13 +1,10 @@
 services:
   - type: web
     name: estella-wilson-api
-    runtime: python
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     region: ohio
     plan: free
-    buildCommand: apt-get install -y poppler-utils && pip install -r web/backend/requirements.txt
-    startCommand: cd web/backend && uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: ALLOWED_ORIGINS
         value: https://your-site.netlify.app
-      - key: PYTHON_VERSION
-        value: "3.11.0"
