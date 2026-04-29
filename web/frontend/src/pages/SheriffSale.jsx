@@ -93,8 +93,28 @@ export default function SheriffSale() {
     </th>
   );
 
-  const fmt = (v) => v != null ? `$${Number(v).toLocaleString(undefined,{maximumFractionDigits:0})}` : "—";
+  const fmt  = (v) => v != null ? `$${Number(v).toLocaleString(undefined,{maximumFractionDigits:0})}` : "—";
   const fmtP = (v) => v != null ? `${Number(v).toFixed(1)}%` : "—";
+
+  const DebugButton = () => (
+    <label className={`inline-flex items-center gap-2 text-xs font-semibold cursor-pointer px-3 py-2 rounded-lg border transition-colors ${
+      debugging ? "border-gray-300 text-gray-400 cursor-default" : "border-brand-line text-gray-500 hover:border-brand-orange hover:text-brand-orange"
+    }`}>
+      {debugging ? "⏳ Generating debug report…" : "⬇ Download Debug Report"}
+      <input
+        type="file" accept=".pdf" className="hidden"
+        disabled={debugging}
+        onChange={async (e) => {
+          const f = e.target.files[0];
+          if (!f) return;
+          setDebugging(true);
+          try { await debugAnalyzePdf(f); }
+          catch (err) { alert("Debug failed: " + (err.message || "Unknown error")); }
+          finally { setDebugging(false); e.target.value = ""; }
+        }}
+      />
+    </label>
+  );
 
   return (
     <div className="space-y-6">
@@ -185,45 +205,27 @@ export default function SheriffSale() {
             <span className="text-sm text-gray-600">Auto-enrich property data (slower, more accurate)</span>
           </label>
 
-          <div className="flex items-center gap-4 flex-wrap">
-            <button
-              onClick={startAnalysis}
-              disabled={tab === "url" ? !url : !file}
-              className="bg-brand-orange text-white font-bold px-8 py-3 rounded-xl disabled:opacity-40 hover:bg-brand-dark transition-colors"
-            >
-              Start Analysis
-            </button>
-
-            {/* Debug download — always visible so issues can be diagnosed */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">Troubleshoot:</span>
-              <label className={`text-xs font-semibold cursor-pointer px-3 py-2 rounded-lg border transition-colors ${
-                debugging ? "border-gray-300 text-gray-400" : "border-brand-line text-gray-500 hover:border-brand-orange hover:text-brand-orange"
-              }`}>
-                {debugging ? "Generating debug report…" : "⬇ Download Debug Report"}
-                <input
-                  type="file" accept=".pdf" className="hidden"
-                  disabled={debugging}
-                  onChange={async (e) => {
-                    const f = e.target.files[0];
-                    if (!f) return;
-                    setDebugging(true);
-                    try { await debugAnalyzePdf(f); }
-                    catch (err) { alert("Debug failed: " + (err.message || "Unknown error")); }
-                    finally { setDebugging(false); e.target.value = ""; }
-                  }}
-                />
-              </label>
-            </div>
-          </div>
+          <button
+            onClick={startAnalysis}
+            disabled={tab === "url" ? !url : !file}
+            className="bg-brand-orange text-white font-bold px-8 py-3 rounded-xl disabled:opacity-40 hover:bg-brand-dark transition-colors"
+          >
+            Start Analysis
+          </button>
         </div>
       )}
 
       {/* ── Step 2: Processing ── */}
       {step === "processing" && job && (
-        <div className="bg-white rounded-xl border border-brand-line p-8">
-          <h2 className="text-lg font-semibold text-brand-charcoal mb-6">Analyzing sheriff sale…</h2>
+        <div className="bg-white rounded-xl border border-brand-line p-8 space-y-6">
+          <h2 className="text-lg font-semibold text-brand-charcoal">Analyzing sheriff sale…</h2>
           <ProgressStepper percent={job.percent} message={job.message} status={job.status} />
+          {job.status === "error" && (
+            <div className="pt-2 border-t border-brand-line flex items-center gap-3">
+              <span className="text-xs text-gray-500">Upload the same PDF to get a detailed diagnostic:</span>
+              <DebugButton />
+            </div>
+          )}
         </div>
       )}
 
@@ -243,7 +245,8 @@ export default function SheriffSale() {
                 {count} {label}
               </span>
             ))}
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-3">
+              <DebugButton />
               <a href={pdfUrl(report.id)} target="_blank" rel="noreferrer"
                 className="bg-brand-charcoal text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-black transition-colors">
                 ↓ Download PDF
