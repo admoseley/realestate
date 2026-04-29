@@ -35,7 +35,22 @@ export default function SpotCheck() {
       const data = await runSpotCheck(payload);
       setResult(data);
     } catch (err) {
-      setError(err.response?.data?.detail || "Analysis failed");
+      if (!err.response) {
+        // Network error — no response from server at all
+        setError({
+          type: "Network Error",
+          status: null,
+          detail: err.message,
+          hint: `Could not reach the API. Check that VITE_API_URL is set correctly in Netlify. Current target: ${import.meta.env.VITE_API_URL || "/api (proxy — no VITE_API_URL set)"}`,
+        });
+      } else {
+        setError({
+          type: "Server Error",
+          status: err.response.status,
+          detail: err.response.data?.detail || err.response.data || err.message,
+          hint: null,
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -130,7 +145,20 @@ export default function SpotCheck() {
         </button>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
+          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-4 text-sm space-y-2">
+            <div className="flex items-center gap-2 font-bold text-red-700">
+              <span>✕</span>
+              <span>{error.type}{error.status ? ` — HTTP ${error.status}` : ""}</span>
+            </div>
+            <p className="text-red-700 font-mono text-xs break-all">
+              {typeof error.detail === "object" ? JSON.stringify(error.detail) : String(error.detail)}
+            </p>
+            {error.hint && (
+              <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs">
+                {error.hint}
+              </p>
+            )}
+          </div>
         )}
       </form>
 
