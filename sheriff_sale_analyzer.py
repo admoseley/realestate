@@ -55,6 +55,8 @@ class Property:
     year_built:     Optional[str]   = None
     sqft:           Optional[int]   = None
     bedrooms:       Optional[int]   = None
+    land_only:      bool = False
+    use_desc:       str  = ""
     # Derived
     deal_score:     float = 0.0
     equity_at_bid:  Optional[float] = None
@@ -344,13 +346,21 @@ def fetch_wprdc_parcel(parcel_id: str) -> dict:
         records = data.get("result", {}).get("records", [])
         if records:
             r = records[0]
+            use_desc = str(r.get("USEDESC") or "").strip()
+            sqft     = int(float(r.get("FINISHEDLIVINGAREA") or 0)) or None
             return {
                 "fair_market":    float(r.get("FAIRMARKETTOTAL") or 0) or None,
                 "assessed_value": float(r.get("LOCALTOTAL") or r.get("COUNTYTOTAL") or 0) or None,
                 "year_built":     str(r.get("YEARBLT") or "") or None,
-                "sqft":           int(float(r.get("FINISHEDLIVINGAREA") or 0)) or None,
+                "sqft":           sqft,
                 "bedrooms":       int(float(r.get("BEDROOMS") or 0)) or None,
                 "parcel_id":      r.get("PARID", parcel_id),
+                "use_desc":       use_desc,
+                "land_only":      (
+                    "VACANT" in use_desc.upper() or
+                    "LAND" in use_desc.upper() or
+                    (sqft == 0 and not r.get("YEARBLT"))
+                ),
             }
     except Exception:
         pass
@@ -374,6 +384,8 @@ def enrich_property(prop: Property, delay: float = 0.5) -> None:
         prop.year_built     = result.get("year_built") or None
         prop.sqft           = result.get("sqft") or None
         prop.bedrooms       = result.get("bedrooms") or None
+        prop.use_desc       = result.get("use_desc") or ""
+        prop.land_only      = bool(result.get("land_only", False))
 
 
 def compute_deal_score(prop: Property) -> None:

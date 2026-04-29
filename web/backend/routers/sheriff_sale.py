@@ -118,7 +118,10 @@ def _run_pipeline(job_id: str, pdf_source: str, is_url: bool,
                 bedrooms     = int(prop.bedrooms or 3),
                 postponed    = not prop.active,
             )
-            deals.append(analyze(d))
+            analyzed = analyze(d)
+            if prop.land_only:
+                analyzed.red_flags.insert(0, f"LAND ONLY — no structure on parcel (USEDESC: {prop.use_desc or 'vacant'})")
+            deals.append(analyzed)
 
         deals.sort(key=lambda d: d.score, reverse=True)
 

@@ -21,7 +21,8 @@ export default function SheriffSale() {
   const [filter,  setFilter]  = useState("ALL");
   const [sortCol, setSortCol] = useState("score");
   const [sortAsc, setSortAsc] = useState(false);
-  const [expanded, setExpanded] = useState(null);
+  const [expanded,  setExpanded]  = useState(null);
+  const [hideLand,  setHideLand]  = useState(false);
   const pollRef = useRef(null);
 
   const startAnalysis = async () => {
@@ -70,6 +71,7 @@ export default function SheriffSale() {
     setReport(null);
     setFilter("ALL");
     setExpanded(null);
+    setHideLand(false);
   };
 
   const sort = (col) => {
@@ -78,8 +80,10 @@ export default function SheriffSale() {
   };
 
   const deals = report?.deals || [];
+  const isLandOnly = (d) => d.red_flags?.some(f => f.startsWith("LAND ONLY"));
+  const landCount  = deals.filter(isLandOnly).length;
   const visible = deals
-    .filter(d => filter === "ALL" || d.verdict === filter)
+    .filter(d => (filter === "ALL" || d.verdict === filter) && (!hideLand || !isLandOnly(d)))
     .sort((a, b) => {
       const av = a[sortCol] ?? 0, bv = b[sortCol] ?? 0;
       return sortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
@@ -278,13 +282,21 @@ export default function SheriffSale() {
           </div>
 
           {/* Filter pills */}
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-center">
             {["ALL", ...VERDICTS].map(v => (
               <button key={v} onClick={() => setFilter(v)}
                 className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${filter === v ? "bg-brand-orange border-brand-orange text-white" : "border-brand-line text-gray-600 hover:border-brand-orange"}`}>
                 {v}
               </button>
             ))}
+            {landCount > 0 && (
+              <button
+                onClick={() => setHideLand(v => !v)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${hideLand ? "bg-amber-500 border-amber-500 text-white" : "border-amber-300 text-amber-700 hover:border-amber-500"}`}
+              >
+                {hideLand ? `▲ Showing land-only (${landCount})` : `Hide Land Only (${landCount})`}
+              </button>
+            )}
           </div>
 
           {/* Table */}
@@ -316,6 +328,11 @@ export default function SheriffSale() {
                         <td className="px-3 py-2 font-bold text-brand-orange">{d.score ?? "—"}</td>
                         <td className="px-3 py-2 text-brand-charcoal font-medium max-w-xs">
                           <p className="leading-snug">{d.address}</p>
+                          {isLandOnly(d) && (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide bg-amber-100 text-amber-800 border border-amber-300">
+                              LAND ONLY
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{d.municipality || "—"}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{fmt(d.min_bid)}</td>
