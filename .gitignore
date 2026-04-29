@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+
+# Generated outputs (not for version control)
+*.pdf
+web/backend/reports/
+web/backend/reports.db
+
+# Frontend
+node_modules/
+web/frontend/dist/
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
