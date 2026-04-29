@@ -13,6 +13,7 @@ export default function SheriffSale() {
   const [url,        setUrl]        = useState(DEFAULT_URL);
   const [file,       setFile]       = useState(null);
   const [enrich,     setEnrich]     = useState(true);
+  const [fcOnly,     setFcOnly]     = useState(true);
   const [debugging,  setDebugging]  = useState(false);
   const [step,    setStep]    = useState("idle"); // idle | processing | results
   const [job,     setJob]     = useState(null);
@@ -28,8 +29,8 @@ export default function SheriffSale() {
     setJob({ status: "pending", percent: 0, message: "Queued…" });
     try {
       const resp = tab === "url"
-        ? await sheriffSaleFromUrl(url, enrich)
-        : await sheriffSaleUpload(file, enrich);
+        ? await sheriffSaleFromUrl(url, enrich, fcOnly)
+        : await sheriffSaleUpload(file, enrich, fcOnly);
       pollRef.current = setInterval(() => tick(resp.job_id), 2000);
     } catch (e) {
       setJob({ status: "error", percent: 0, message: e.response?.data?.detail || "Failed to start job" });
@@ -195,15 +196,37 @@ export default function SheriffSale() {
             </div>
           )}
 
-          <label className="flex items-center gap-3 cursor-pointer">
-            <div
-              onClick={() => setEnrich(e => !e)}
-              className={`w-10 h-6 rounded-full transition-colors ${enrich ? "bg-brand-orange" : "bg-brand-line"} relative`}
-            >
-              <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${enrich ? "left-5" : "left-1"}`} />
-            </div>
-            <span className="text-sm text-gray-600">Auto-enrich property data (slower, more accurate)</span>
-          </label>
+          <div className="space-y-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div
+                onClick={() => setFcOnly(v => !v)}
+                className={`w-10 h-6 rounded-full transition-colors ${fcOnly ? "bg-brand-orange" : "bg-brand-line"} relative flex-shrink-0`}
+              >
+                <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${fcOnly ? "left-5" : "left-1"}`} />
+              </div>
+              <div>
+                <span className="text-sm text-gray-700 font-medium">Free &amp; Clear properties only</span>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {fcOnly
+                    ? "Only analyzing F&C properties — best investment candidates with no lender debt."
+                    : "Analyzing all properties — includes regular foreclosures (lender owed money)."}
+                </p>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div
+                onClick={() => setEnrich(e => !e)}
+                className={`w-10 h-6 rounded-full transition-colors ${enrich ? "bg-brand-orange" : "bg-brand-line"} relative flex-shrink-0`}
+              >
+                <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${enrich ? "left-5" : "left-1"}`} />
+              </div>
+              <div>
+                <span className="text-sm text-gray-700 font-medium">Auto-enrich property data</span>
+                <p className="text-xs text-gray-400 mt-0.5">Looks up FMV, sqft, year built from WPRDC. Slower but more accurate.</p>
+              </div>
+            </label>
+          </div>
 
           <button
             onClick={startAnalysis}

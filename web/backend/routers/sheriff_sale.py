@@ -55,7 +55,7 @@ def _download_pdf(url: str, dest: Path):
 
 
 def _run_pipeline(job_id: str, pdf_source: str, is_url: bool,
-                  enrich: bool, db_factory, cleanup_path: str = None):
+                  enrich: bool, fc_only: bool, db_factory, cleanup_path: str = None):
     db: Session = next(db_factory())
     try:
         # Step 1 — get PDF
@@ -76,10 +76,13 @@ def _run_pipeline(job_id: str, pdf_source: str, is_url: bool,
         # Step 3 — parse
         update_job(job_id, "running", 25, "Parsing property records…")
         properties = parse_sheriff_text(txt_path)
-        fc_props   = [p for p in properties if p.free_and_clear]
+        fc_props   = [p for p in properties if p.free_and_clear] if fc_only else properties
+        label      = "Free & Clear" if fc_only else "total"
 
         if not fc_props:
-            fail_job(job_id, "No Free & Clear properties found in this PDF.")
+            msg = ("No Free & Clear properties found in this PDF." if fc_only
+                   else "No properties found in this PDF.")
+            fail_job(job_id, msg)
             return
 
         # Step 4 — enrich
@@ -87,7 +90,7 @@ def _run_pipeline(job_id: str, pdf_source: str, is_url: bool,
             for i, prop in enumerate(fc_props):
                 pct = 25 + int((i / len(fc_props)) * 30)
                 update_job(job_id, "running", pct,
-                           f"Enriching property {i+1} of {len(fc_props)}: {prop.address[:40]}…")
+                           f"Enriching property {i+1} of {len(fc_props)} ({label}): {prop.address[:40]}…")
                 enrich_property(prop)
 
         # Step 5 — build Deal objects + analyze
@@ -125,7 +128,7 @@ def _run_pipeline(job_id: str, pdf_source: str, is_url: bool,
         report = Report(
             type           = "sheriff_sale",
             created_at     = datetime.utcnow(),
-            title          = f"Sheriff Sale — {datetime.utcnow().strftime('%B %d, %Y')}",
+            title          = f"Sheriff Sale {'(F&C Only)' if fc_only else '(All Properties)'} — {datetime.utcnow().strftime('%B %d, %Y')}",
             property_count = len(deals),
             buy_count      = sum(1 for d in deals if d.verdict == "BUY"),
             consider_count = sum(1 for d in deals if d.verdict == "CONSIDER"),
@@ -169,14 +172,15 @@ def analyze_from_url(req: SheriffSaleUrlRequest,
                      db: Session = Depends(get_db)):
     job_id = create_job()
     background_tasks.add_task(
-        _run_pipeline, job_id, req.url, True, req.enrich, get_db
+        _run_pipeline, job_id, req.url, True, req.enrich, req.fc_only, get_db
     )
     return {"job_id": job_id}
 
 
 @router.post("/upload")
 async def analyze_from_upload(background_tasks: BackgroundTasks,
-                               enrich: bool = Form(True),
+                               enrich:  bool = Form(True),
+                               fc_only: bool = Form(True),
                                file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Uploaded file must be a PDF.")
@@ -186,7 +190,7 @@ async def analyze_from_upload(background_tasks: BackgroundTasks,
     tmp.close()
     job_id = create_job()
     background_tasks.add_task(
-        _run_pipeline, job_id, tmp.name, False, enrich, get_db,
+        _run_pipeline, job_id, tmp.name, False, enrich, fc_only, get_db,
         cleanup_path=tmp.name,
     )
     return {"job_id": job_id}

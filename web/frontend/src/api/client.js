@@ -6,13 +6,14 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
 });
 
-export const sheriffSaleFromUrl = (url, enrich = true) =>
-  api.post("/sheriff-sale/from-url", { url, enrich }).then(r => r.data);
+export const sheriffSaleFromUrl = (url, enrich = true, fcOnly = true) =>
+  api.post("/sheriff-sale/from-url", { url, enrich, fc_only: fcOnly }).then(r => r.data);
 
-export const sheriffSaleUpload = (file, enrich = true) => {
+export const sheriffSaleUpload = (file, enrich = true, fcOnly = true) => {
   const form = new FormData();
   form.append("file", file);
   form.append("enrich", enrich);
+  form.append("fc_only", fcOnly);
   return api.post("/sheriff-sale/upload", form).then(r => r.data);
 };
 
