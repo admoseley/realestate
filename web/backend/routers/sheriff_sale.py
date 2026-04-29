@@ -1,12 +1,12 @@
 import json
 import os
 import sys
-import shutil
 import tempfile
-import threading
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+
+import requests as http_requests
 
 from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
@@ -15,23 +15,47 @@ sys.path.insert(0, str(Path(__file__).parents[3]))
 
 from investment_analyzer import Deal, analyze
 from generate_pdf_report import build_and_save_pdf
-from sheriff_sale_analyzer import (
-    download_pdf, pdf_to_text, parse_sheriff_text, enrich_property
-)
+from sheriff_sale_analyzer import pdf_to_text, parse_sheriff_text, enrich_property
 
 from database import Report, get_db
 from jobs import create_job, update_job, fail_job
 from models import SheriffSaleUrlRequest, JobStatus
 
-router     = APIRouter(prefix="/api/sheriff-sale", tags=["sheriff-sale"])
+router      = APIRouter(prefix="/api/sheriff-sale", tags=["sheriff-sale"])
 REPORTS_DIR = Path(os.getenv("REPORTS_DIR", str(Path(__file__).parent.parent / "reports")))
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 SHERIFF_PDF_CACHE = Path("/tmp/sheriff_sale_web.pdf")
 SHERIFF_TXT_CACHE = Path("/tmp/sheriff_sale_web.txt")
 
+# Browser headers so sheriff sale sites don't reject the request
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept":          "application/pdf,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer":         "https://www.google.com/",
+}
 
-def _run_pipeline(job_id: str, pdf_source, is_url: bool, enrich: bool, db_factory):
+
+def _download_pdf(url: str, dest: Path):
+    """Download a PDF via HTTP with browser-like headers."""
+    resp = http_requests.get(url, headers=_BROWSER_HEADERS, timeout=60, stream=True)
+    resp.raise_for_status()
+    content_type = resp.headers.get("Content-Type", "")
+    if "pdf" not in content_type and not url.lower().endswith(".pdf"):
+        raise ValueError(f"URL did not return a PDF (Content-Type: {content_type})")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=65536):
+            f.write(chunk)
+
+
+def _run_pipeline(job_id: str, pdf_source: str, is_url: bool,
+                  enrich: bool, db_factory, cleanup_path: str = None):
     db: Session = next(db_factory())
     try:
         # Step 1 — get PDF
@@ -39,7 +63,7 @@ def _run_pipeline(job_id: str, pdf_source, is_url: bool, enrich: bool, db_factor
         if is_url:
             SHERIFF_PDF_CACHE.unlink(missing_ok=True)
             SHERIFF_TXT_CACHE.unlink(missing_ok=True)
-            download_pdf(pdf_source, SHERIFF_PDF_CACHE)
+            _download_pdf(pdf_source, SHERIFF_PDF_CACHE)
             pdf_path = SHERIFF_PDF_CACHE
         else:
             pdf_path = Path(pdf_source)
@@ -128,6 +152,12 @@ def _run_pipeline(job_id: str, pdf_source, is_url: bool, enrich: bool, db_factor
         raise
     finally:
         db.close()
+        # Delete uploaded temp file after pipeline finishes
+        if cleanup_path:
+            try:
+                Path(cleanup_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 @router.post("/from-url")
@@ -153,6 +183,7 @@ async def analyze_from_upload(background_tasks: BackgroundTasks,
     tmp.close()
     job_id = create_job()
     background_tasks.add_task(
-        _run_pipeline, job_id, tmp.name, False, enrich, get_db
+        _run_pipeline, job_id, tmp.name, False, enrich, get_db,
+        cleanup_path=tmp.name,
     )
     return {"job_id": job_id}
