@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { sheriffSaleFromUrl, sheriffSaleUpload, pollJob, getReport, pdfUrl } from "../api/client";
+import { sheriffSaleFromUrl, sheriffSaleUpload, pollJob, getReport, pdfUrl, debugAnalyzePdf } from "../api/client";
 import ProgressStepper from "../components/ProgressStepper";
 import PropertyCard from "../components/PropertyCard";
 import VerdictBadge from "../components/VerdictBadge";
@@ -9,10 +9,11 @@ const DEFAULT_URL = "https://www.alleghenycounty.us/files/assets/county/v/1/gove
 const VERDICTS = ["BUY", "CONSIDER", "WATCH", "NO BUY"];
 
 export default function SheriffSale() {
-  const [tab,     setTab]     = useState("upload");  // "url" | "upload"
-  const [url,     setUrl]     = useState(DEFAULT_URL);
-  const [file,    setFile]    = useState(null);
-  const [enrich,  setEnrich]  = useState(true);
+  const [tab,        setTab]        = useState("upload");  // "url" | "upload"
+  const [url,        setUrl]        = useState(DEFAULT_URL);
+  const [file,       setFile]       = useState(null);
+  const [enrich,     setEnrich]     = useState(true);
+  const [debugging,  setDebugging]  = useState(false);
   const [step,    setStep]    = useState("idle"); // idle | processing | results
   const [job,     setJob]     = useState(null);
   const [report,  setReport]  = useState(null);
@@ -184,13 +185,37 @@ export default function SheriffSale() {
             <span className="text-sm text-gray-600">Auto-enrich property data (slower, more accurate)</span>
           </label>
 
-          <button
-            onClick={startAnalysis}
-            disabled={tab === "url" ? !url : !file}
-            className="bg-brand-orange text-white font-bold px-8 py-3 rounded-xl disabled:opacity-40 hover:bg-brand-dark transition-colors"
-          >
-            Start Analysis
-          </button>
+          <div className="flex items-center gap-4 flex-wrap">
+            <button
+              onClick={startAnalysis}
+              disabled={tab === "url" ? !url : !file}
+              className="bg-brand-orange text-white font-bold px-8 py-3 rounded-xl disabled:opacity-40 hover:bg-brand-dark transition-colors"
+            >
+              Start Analysis
+            </button>
+
+            {/* Debug download — always visible so issues can be diagnosed */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">Troubleshoot:</span>
+              <label className={`text-xs font-semibold cursor-pointer px-3 py-2 rounded-lg border transition-colors ${
+                debugging ? "border-gray-300 text-gray-400" : "border-brand-line text-gray-500 hover:border-brand-orange hover:text-brand-orange"
+              }`}>
+                {debugging ? "Generating debug report…" : "⬇ Download Debug Report"}
+                <input
+                  type="file" accept=".pdf" className="hidden"
+                  disabled={debugging}
+                  onChange={async (e) => {
+                    const f = e.target.files[0];
+                    if (!f) return;
+                    setDebugging(true);
+                    try { await debugAnalyzePdf(f); }
+                    catch (err) { alert("Debug failed: " + (err.message || "Unknown error")); }
+                    finally { setDebugging(false); e.target.value = ""; }
+                  }}
+                />
+              </label>
+            </div>
+          </div>
         </div>
       )}
 

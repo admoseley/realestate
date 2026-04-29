@@ -33,4 +33,16 @@ export const deleteReport = (id) =>
 
 export const pdfUrl = (id) => `${import.meta.env.VITE_API_URL || "/api"}/reports/${id}/pdf`;
 
+export const debugAnalyzePdf = async (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  const resp = await api.post("/debug/analyze-pdf", form, { responseType: "blob" });
+  const url  = URL.createObjectURL(new Blob([resp.data], { type: "text/plain" }));
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `sheriff_debug_${Date.now()}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 export default api;
