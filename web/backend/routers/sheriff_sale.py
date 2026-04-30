@@ -115,7 +115,23 @@ def _run_pipeline(job_id: str, pdf_path: str,
                    report_id=report.id)
         ts      = datetime.utcnow().strftime("%m%d%Y-%H%M%S")
         pdf_out = REPORTS_DIR / f"SheriffSale_{report.id}_{ts}.pdf"
-        build_and_save_pdf(deals, pdf_out)
+        n_deals = len(deals)
+
+        def _pdf_progress(current, total, phase):
+            if phase == "property":
+                pct = 80 + int(current / max(total, 1) * 10)
+                update_job(job_id, "running", pct,
+                           f"Building PDF: property {current} of {total}…",
+                           report_id=report.id)
+            elif phase == "render":
+                update_job(job_id, "running", 91,
+                           f"Rendering PDF ({n_deals} properties)…",
+                           report_id=report.id)
+            elif phase == "save":
+                update_job(job_id, "running", 96, "Saving PDF file…",
+                           report_id=report.id)
+
+        build_and_save_pdf(deals, pdf_out, progress_cb=_pdf_progress)
         report.pdf_path = str(pdf_out)
         db.commit()
 

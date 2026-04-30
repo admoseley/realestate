@@ -1525,6 +1525,7 @@ def build_and_save_pdf(
     footer_label: str = None,
     subtitle: str = None,
     cover_note: str = None,
+    progress_cb=None,
 ) -> Path:
     """
     Build and write the branded PDF for any list of analyzed Deal objects.
@@ -1538,6 +1539,8 @@ def build_and_save_pdf(
     footer_label    : text shown in the page footer (e.g. "Allegheny County Sheriff Sale")
     subtitle        : date/context line on the cover page
     cover_note      : italic note below the leaderboard; pass "" to suppress
+    progress_cb     : optional callable(current, total, phase) for progress reporting
+                      phase is one of: "property", "render", "save"
     """
     if geocache_extra:
         GEOCACHE.update(geocache_extra)
@@ -1569,8 +1572,11 @@ def build_and_save_pdf(
     story = []
     story += build_cover(deals, S, subtitle=subtitle, cover_note=cover_note)
 
+    total = len(deals)
     for i, deal in enumerate(deals, 1):
-        print(f"  [{i}/{len(deals)}] Building page: {deal.address[:45]}")
+        if progress_cb:
+            progress_cb(i, total, "property")
+        print(f"  [{i}/{total}] Building page: {deal.address[:45]}")
         story += build_property_page(deal, S)
 
     print("  Building glossary…")
@@ -1579,6 +1585,8 @@ def build_and_save_pdf(
     print("  Building data sources page…")
     story += build_sources(S)
 
+    if progress_cb:
+        progress_cb(0, total, "render")
     print(f"\nRendering PDF → {output_path}")
     doc.build(
         story,
@@ -1589,6 +1597,8 @@ def build_and_save_pdf(
             footer_label=_footer,
         ),
     )
+    if progress_cb:
+        progress_cb(0, total, "save")
     print(f"Done. Saved to: {output_path}")
     return output_path
 
