@@ -3,9 +3,9 @@ const STEPS = [
   { label: "Converting",     threshold: 15 },
   { label: "Parsing",        threshold: 25 },
   { label: "Enriching",      threshold: 55 },
-  { label: "Analyzing",      threshold: 65 },
-  { label: "Saving",         threshold: 75 },
-  { label: "Generating PDF", threshold: 90 },
+  { label: "Analyzing",      threshold: 60 },
+  { label: "Saving",         threshold: 70 },
+  { label: "Generating PDF", threshold: 80 },
   { label: "Done",           threshold: 100 },
 ];
 

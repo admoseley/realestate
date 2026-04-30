@@ -6,8 +6,6 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-import requests as http_requests
-
 from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 
@@ -19,54 +17,21 @@ from sheriff_sale_analyzer import pdf_to_text, parse_sheriff_text, enrich_proper
 
 from database import Report, get_db
 from jobs import create_job, update_job, fail_job
-from models import SheriffSaleUrlRequest, JobStatus
+from models import JobStatus
 
 router      = APIRouter(prefix="/api/sheriff-sale", tags=["sheriff-sale"])
 REPORTS_DIR = Path(os.getenv("REPORTS_DIR", str(Path(__file__).parent.parent / "reports")))
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-SHERIFF_PDF_CACHE = Path("/tmp/sheriff_sale_web.pdf")
 SHERIFF_TXT_CACHE = Path("/tmp/sheriff_sale_web.txt")
 
-# Browser headers so sheriff sale sites don't reject the request
-_BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept":          "application/pdf,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer":         "https://www.google.com/",
-}
 
-
-def _download_pdf(url: str, dest: Path):
-    """Download a PDF via HTTP with browser-like headers."""
-    resp = http_requests.get(url, headers=_BROWSER_HEADERS, timeout=60, stream=True)
-    resp.raise_for_status()
-    content_type = resp.headers.get("Content-Type", "")
-    if "pdf" not in content_type and not url.lower().endswith(".pdf"):
-        raise ValueError(f"URL did not return a PDF (Content-Type: {content_type})")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with open(dest, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=65536):
-            f.write(chunk)
-
-
-def _run_pipeline(job_id: str, pdf_source: str, is_url: bool,
+def _run_pipeline(job_id: str, pdf_path: str,
                   enrich: bool, fc_only: bool, db_factory, cleanup_path: str = None):
     db: Session = next(db_factory())
     try:
-        # Step 1 — get PDF
         update_job(job_id, "running", 5, "Fetching sheriff sale PDF…")
-        if is_url:
-            SHERIFF_PDF_CACHE.unlink(missing_ok=True)
-            SHERIFF_TXT_CACHE.unlink(missing_ok=True)
-            _download_pdf(pdf_source, SHERIFF_PDF_CACHE)
-            pdf_path = SHERIFF_PDF_CACHE
-        else:
-            pdf_path = Path(pdf_source)
+        pdf_path = Path(pdf_path)
 
         # Step 2 — convert PDF → text
         update_job(job_id, "running", 15, "Converting PDF to text…")
@@ -169,17 +134,6 @@ def _run_pipeline(job_id: str, pdf_source: str, is_url: bool,
                 pass
 
 
-@router.post("/from-url")
-def analyze_from_url(req: SheriffSaleUrlRequest,
-                     background_tasks: BackgroundTasks,
-                     db: Session = Depends(get_db)):
-    job_id = create_job()
-    background_tasks.add_task(
-        _run_pipeline, job_id, req.url, True, req.enrich, req.fc_only, get_db
-    )
-    return {"job_id": job_id}
-
-
 @router.post("/upload")
 async def analyze_from_upload(background_tasks: BackgroundTasks,
                                enrich:  bool = Form(True),
@@ -193,7 +147,7 @@ async def analyze_from_upload(background_tasks: BackgroundTasks,
     tmp.close()
     job_id = create_job()
     background_tasks.add_task(
-        _run_pipeline, job_id, tmp.name, False, enrich, fc_only, get_db,
+        _run_pipeline, job_id, tmp.name, enrich, fc_only, get_db,
         cleanup_path=tmp.name,
     )
     return {"job_id": job_id}

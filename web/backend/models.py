@@ -5,12 +5,6 @@ from pydantic import BaseModel
 
 # ── Requests ──────────────────────────────────────────────────────────────────
 
-class SheriffSaleUrlRequest(BaseModel):
-    url:     str
-    enrich:  bool = True
-    fc_only: bool = True
-
-
 class SpotCheckRequest(BaseModel):
     address: str
     price: float

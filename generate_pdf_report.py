@@ -81,6 +81,10 @@ def _deg2tile(lat, lon, zoom):
     return x, y
 
 
+_MAP_TILE_TIMEOUT   = 3   # seconds per tile HTTP request
+_MAP_TOTAL_BUDGET   = 12  # seconds max for the entire 3×3 grid fetch
+
+
 def fetch_map_tile(lat: float, lon: float, zoom: int = 16) -> bytes | None:
     """Fetch a single OSM tile as PNG bytes."""
     x, y = _deg2tile(lat, lon, zoom)
@@ -89,7 +93,7 @@ def fetch_map_tile(lat: float, lon: float, zoom: int = 16) -> bytes | None:
         req = urllib.request.Request(
             url, headers={"User-Agent": "EstellaWilsonProperties/1.0 (property analysis)"}
         )
-        with urllib.request.urlopen(req, timeout=8) as r:
+        with urllib.request.urlopen(req, timeout=_MAP_TILE_TIMEOUT) as r:
             return r.read()
     except Exception:
         return None
@@ -97,8 +101,9 @@ def fetch_map_tile(lat: float, lon: float, zoom: int = 16) -> bytes | None:
 
 def fetch_map_image(lat: float, lon: float) -> BytesIO | None:
     """
-    Build a 3×2 grid of OSM tiles centred on the property, stitched with Pillow.
+    Build a 3×3 grid of OSM tiles centred on the property, stitched with Pillow.
     Returns a BytesIO PNG ready for ReportLab Image(), or None on failure.
+    Aborts early if the total fetch time exceeds _MAP_TOTAL_BUDGET seconds.
     """
     try:
         from PIL import Image as PILImage, ImageDraw, ImageFont
@@ -107,20 +112,21 @@ def fetch_map_image(lat: float, lon: float) -> BytesIO | None:
         tile_size = 256
         grid_w, grid_h = 3, 3
         composite = PILImage.new("RGB", (tile_size * grid_w, tile_size * grid_h), (240, 240, 240))
+        deadline = time.monotonic() + _MAP_TOTAL_BUDGET
         for dx in range(-1, 2):
             for dy in range(-1, 2):
-                tile_bytes = fetch_map_tile.__wrapped__(lat, lon, zoom) if hasattr(fetch_map_tile, '__wrapped__') else None
+                if time.monotonic() >= deadline:
+                    break
                 tx, ty = cx + dx, cy + dy
                 url = f"https://tile.openstreetmap.org/{zoom}/{tx}/{ty}.png"
                 try:
                     req = urllib.request.Request(
                         url, headers={"User-Agent": "EstellaWilsonProperties/1.0"}
                     )
-                    with urllib.request.urlopen(req, timeout=6) as r:
+                    with urllib.request.urlopen(req, timeout=_MAP_TILE_TIMEOUT) as r:
                         tile_data = r.read()
                     tile_img = PILImage.open(BytesIO(tile_data)).convert("RGB")
                     composite.paste(tile_img, ((dx + 1) * tile_size, (dy + 1) * tile_size))
-                    time.sleep(0.05)
                 except Exception:
                     pass
         # Draw a red pin at center
@@ -159,6 +165,12 @@ def _rating_color(rating: str) -> colors.Color:
         "AVOID":   RED_BAD,
         "WATCH":   GRAY_MID,
     }.get(rating, GRAY_MID)
+
+
+def _maps_url(address: str, municipality: str) -> str:
+    """Return a Google Maps search URL for the property address."""
+    query = f"{address.replace(chr(10), ' ')}, {municipality}, PA"
+    return f"https://maps.google.com/?q={urllib.parse.quote_plus(query)}"
 
 
 def fmt(v: float, prefix: str = "$") -> str:
@@ -437,7 +449,11 @@ def build_cover(deals: list[Deal], S: dict,
         vc = _verdict_color(d.verdict)
         rows.append([
             str(i),
-            Paragraph(d.address.replace("\n", " "), addr_cell_style),
+            Paragraph(
+                f'<a href="{_maps_url(d.address, d.municipality)}">'
+                f'<u>{d.address.replace(chr(10), " ")}</u></a>',
+                addr_cell_style
+            ),
             d.municipality,
             fmt(d.min_bid),
             fmt(d.fmv),
@@ -496,9 +512,10 @@ def build_property_page(d: Deal, S: dict) -> list:
     verdict_color = _verdict_color(d.verdict)
     rating_color  = _rating_color(d.perfect_pass_rating)
 
+    _addr_url = _maps_url(d.address, d.municipality)
     banner_data = [[
         Paragraph(
-            f'<font color="white"><b>{addr_clean}</b></font><br/>'
+            f'<a href="{_addr_url}"><font color="white"><b><u>{addr_clean}</u></b></font></a><br/>'
             f'<font color="#FFDDAA" size="8">{d.municipality} · Parcel {d.parcel} · '
             f'Built {d.year_built} · {d.sqft:,} sqft · {d.bedrooms}BR / {d.fullbaths}BA</font>',
             ParagraphStyle("bh", fontSize=10, leading=14, fontName="Helvetica-Bold",
@@ -562,7 +579,7 @@ def build_property_page(d: Deal, S: dict) -> list:
     # Address label under map
     map_col.append(Spacer(1, 0.04 * inch))
     map_col.append(Paragraph(
-        f'📍 {addr_clean}, {d.municipality}, PA',
+        f'📍 <a href="{_addr_url}"><u>{addr_clean}, {d.municipality}, PA</u></a>',
         ParagraphStyle("mapl", fontSize=6.5, leading=9, textColor=GRAY_MID,
                        fontName="Helvetica-Oblique")
     ))

@@ -6,9 +6,6 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
 });
 
-export const sheriffSaleFromUrl = (url, enrich = true, fcOnly = true) =>
-  api.post("/sheriff-sale/from-url", { url, enrich, fc_only: fcOnly }).then(r => r.data);
-
 export const sheriffSaleUpload = (file, enrich = true, fcOnly = true) => {
   const form = new FormData();
   form.append("file", file);

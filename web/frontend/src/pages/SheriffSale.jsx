@@ -1,16 +1,12 @@
 import { useState, useRef, useEffect } from "react";
-import { sheriffSaleFromUrl, sheriffSaleUpload, pollJob, getReport, pdfUrl, debugAnalyzePdf } from "../api/client";
+import { sheriffSaleUpload, pollJob, getReport, pdfUrl, debugAnalyzePdf } from "../api/client";
 import ProgressStepper from "../components/ProgressStepper";
 import PropertyCard from "../components/PropertyCard";
 import VerdictBadge from "../components/VerdictBadge";
 
-const DEFAULT_URL = "https://www.alleghenycounty.us/files/assets/county/v/1/government/courts/court-of-common-pleas/sheriff-office/sheriff-sale/sheriff-sale.pdf";
-
 const VERDICTS = ["BUY", "CONSIDER", "WATCH", "NO BUY"];
 
 export default function SheriffSale() {
-  const [tab,        setTab]        = useState("upload");  // "url" | "upload"
-  const [url,        setUrl]        = useState(DEFAULT_URL);
   const [file,       setFile]       = useState(null);
   const [enrich,     setEnrich]     = useState(true);
   const [fcOnly,     setFcOnly]     = useState(true);
@@ -38,9 +34,7 @@ export default function SheriffSale() {
     setStep("processing");
     setJob({ status: "pending", percent: 0, message: "Queued…" });
     try {
-      const resp = tab === "url"
-        ? await sheriffSaleFromUrl(url, enrich, fcOnly)
-        : await sheriffSaleUpload(file, enrich, fcOnly);
+      const resp = await sheriffSaleUpload(file, enrich, fcOnly);
       pollRef.current = setInterval(() => tick(resp.job_id), 2000);
     } catch (e) {
       setJob({ status: "error", percent: 0, message: e.response?.data?.detail || "Failed to start job" });
@@ -58,15 +52,6 @@ export default function SheriffSale() {
         setStep("results");
       } else if (j.status === "error") {
         clearInterval(pollRef.current);
-        // Detect connection timeout — suggest upload instead
-        if (j.message?.toLowerCase().includes("timeout") || j.message?.toLowerCase().includes("timed out")) {
-          setJob(prev => ({
-            ...prev,
-            message: "The sheriff sale website blocked the server's download request. "
-              + "Government sites often block cloud server IPs. "
-              + "Please download the PDF in your browser and use the Upload File tab instead.",
-          }));
-        }
       }
     } catch {}
   };
@@ -189,67 +174,37 @@ export default function SheriffSale() {
       {/* ── Step 1: Input ── */}
       {step === "idle" && (
         <div className="bg-white rounded-xl border border-brand-line p-6 space-y-5">
-          {/* Tab toggle */}
-          <div className="flex rounded-lg border border-brand-line overflow-hidden w-fit">
-            {["upload", "url"].map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                className={`px-5 py-2 text-sm font-medium transition-colors ${tab === t ? "bg-brand-orange text-white" : "bg-white text-gray-600 hover:bg-brand-gray"}`}>
-                {t === "url" ? "PDF URL" : "Upload File"}
-              </button>
-            ))}
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500">
+              Download the sheriff sale PDF from{" "}
+              <a href="https://sheriffalleghenycounty.com" target="_blank" rel="noreferrer"
+                className="text-brand-orange hover:underline font-medium">
+                sheriffalleghenycounty.com
+              </a>{" "}
+              or the Allegheny County website, then upload it here.
+            </p>
+            <div
+              className="border-2 border-dashed border-brand-orange rounded-xl p-10 text-center cursor-pointer hover:bg-brand-tint transition-colors"
+              onClick={() => document.getElementById("pdf-input").click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); setFile(e.dataTransfer.files[0]); }}
+            >
+              <input id="pdf-input" type="file" accept=".pdf" className="hidden" onChange={e => setFile(e.target.files[0])} />
+              {file ? (
+                <div className="space-y-1">
+                  <p className="text-brand-orange text-2xl">✓</p>
+                  <p className="text-brand-charcoal font-semibold">{file.name}</p>
+                  <p className="text-xs text-gray-400">{(file.size / 1024 / 1024).toFixed(1)} MB · click to change</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-3xl">📄</p>
+                  <p className="text-gray-500 text-sm">Drag & drop the sheriff sale PDF here</p>
+                  <p className="text-brand-orange font-semibold text-sm">or click to browse</p>
+                </div>
+              )}
+            </div>
           </div>
-
-          {tab === "upload" ? (
-            <div className="space-y-3">
-              <p className="text-xs text-gray-500">
-                Download the sheriff sale PDF from{" "}
-                <a href="https://sheriffalleghenycounty.com" target="_blank" rel="noreferrer"
-                  className="text-brand-orange hover:underline font-medium">
-                  sheriffalleghenycounty.com
-                </a>{" "}
-                or the Allegheny County website, then upload it here.
-              </p>
-              <div
-                className="border-2 border-dashed border-brand-orange rounded-xl p-10 text-center cursor-pointer hover:bg-brand-tint transition-colors"
-                onClick={() => document.getElementById("pdf-input").click()}
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => { e.preventDefault(); setFile(e.dataTransfer.files[0]); }}
-              >
-                <input id="pdf-input" type="file" accept=".pdf" className="hidden" onChange={e => setFile(e.target.files[0])} />
-                {file ? (
-                  <div className="space-y-1">
-                    <p className="text-brand-orange text-2xl">✓</p>
-                    <p className="text-brand-charcoal font-semibold">{file.name}</p>
-                    <p className="text-xs text-gray-400">{(file.size / 1024 / 1024).toFixed(1)} MB · click to change</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-3xl">📄</p>
-                    <p className="text-gray-500 text-sm">Drag & drop the sheriff sale PDF here</p>
-                    <p className="text-brand-orange font-semibold text-sm">or click to browse</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-800">
-                <span className="text-base leading-none flex-shrink-0">⚠</span>
-                <span>
-                  Government and court websites often block cloud server IPs, causing download timeouts.
-                  If the URL fails, switch to <strong>Upload File</strong> — download the PDF in your
-                  browser first, then upload it here.
-                </span>
-              </div>
-              <label className="block text-sm font-medium text-brand-charcoal">Sheriff Sale PDF URL</label>
-              <input
-                type="url"
-                value={url}
-                onChange={e => setUrl(e.target.value)}
-                className="w-full border border-brand-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange"
-              />
-            </div>
-          )}
 
           <div className="space-y-3">
             <label className="flex items-center gap-3 cursor-pointer">
@@ -285,7 +240,7 @@ export default function SheriffSale() {
 
           <button
             onClick={startAnalysis}
-            disabled={tab === "url" ? !url : !file}
+            disabled={!file}
             className="bg-brand-orange text-white font-bold px-8 py-3 rounded-xl disabled:opacity-40 hover:bg-brand-dark transition-colors"
           >
             Start Analysis
