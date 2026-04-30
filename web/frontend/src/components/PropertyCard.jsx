@@ -24,7 +24,14 @@ export default function PropertyCard({ deal, rank }) {
           {rank != null && (
             <span className="text-xs font-bold text-brand-orange mr-2">#{rank}</span>
           )}
-          <p className="text-base font-bold text-brand-charcoal leading-snug">{deal.address}</p>
+          <a
+            href={`https://maps.google.com/?q=${encodeURIComponent(`${deal.address}, ${deal.municipality}, PA`)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-base font-bold text-brand-charcoal leading-snug hover:text-brand-orange underline underline-offset-2 decoration-brand-orange/50 transition-colors"
+          >
+            {deal.address}
+          </a>
           <p className="text-xs text-gray-500 mt-0.5">
             {[deal.municipality, deal.parcel && `Parcel: ${deal.parcel}`, deal.year_built && `Built ${deal.year_built}`, deal.sqft && `${Number(deal.sqft).toLocaleString()} sqft`, deal.bedrooms && `${deal.bedrooms}BR`].filter(Boolean).join(" · ")}
           </p>
