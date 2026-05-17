@@ -95,7 +95,7 @@ const verdictBg = {
   WATCH:    "border-verdict-watch bg-orange-50",
 };
 
-export default function PropertyCard({ deal, rank }) {
+export default function PropertyCard({ deal, rank, onShare }) {
   const bg = verdictBg[deal.verdict] || "border-brand-line bg-white";
 
   return (
@@ -128,6 +128,15 @@ export default function PropertyCard({ deal, rank }) {
           >
             <img src="/z-logo-default-visual-refresh.svg" alt="Zillow" className="w-10 h-10" />
           </a>
+          {onShare && (
+            <button
+              onClick={() => onShare(deal)}
+              title="Send to someone"
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-brand-line text-gray-600 hover:border-brand-orange hover:text-brand-orange transition-colors whitespace-nowrap"
+            >
+              ✉ Send
+            </button>
+          )}
           <ScoreGauge score={deal.score ?? 0} size={100} />
         </div>
       </div>

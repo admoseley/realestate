@@ -43,4 +43,7 @@ export const debugAnalyzePdf = async (file) => {
   URL.revokeObjectURL(url);
 };
 
+export const shareProperty = (payload) =>
+  api.post("/share/property", payload).then(r => r.data);
+
 export default api;

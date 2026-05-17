@@ -1526,6 +1526,7 @@ def build_and_save_pdf(
     subtitle: str = None,
     cover_note: str = None,
     progress_cb=None,
+    skip_cover: bool = False,
 ) -> Path:
     """
     Build and write the branded PDF for any list of analyzed Deal objects.
@@ -1541,6 +1542,8 @@ def build_and_save_pdf(
     cover_note      : italic note below the leaderboard; pass "" to suppress
     progress_cb     : optional callable(current, total, phase) for progress reporting
                       phase is one of: "property", "render", "save"
+    skip_cover      : when True, omit the multi-property cover/leaderboard page (use for
+                      single-property share PDFs — starts directly at the property page)
     """
     if geocache_extra:
         GEOCACHE.update(geocache_extra)
@@ -1570,7 +1573,8 @@ def build_and_save_pdf(
                                        onPage=lambda c, d: None)])
 
     story = []
-    story += build_cover(deals, S, subtitle=subtitle, cover_note=cover_note)
+    if not skip_cover:
+        story += build_cover(deals, S, subtitle=subtitle, cover_note=cover_note)
 
     total = len(deals)
     for i, deal in enumerate(deals, 1):

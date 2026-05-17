@@ -53,3 +53,10 @@ class SpotCheckResponse(BaseModel):
     report_id: int
     deal:      dict
     warning:   Optional[str] = None
+
+
+class SharePropertyRequest(BaseModel):
+    recipient_name:  str
+    recipient_email: str
+    sender_name:     Optional[str] = None
+    deal:            dict

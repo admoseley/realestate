@@ -3,6 +3,7 @@ import { sheriffSaleUpload, pollJob, getReport, pdfUrl, debugAnalyzePdf } from "
 import ProgressStepper from "../components/ProgressStepper";
 import PropertyCard from "../components/PropertyCard";
 import VerdictBadge from "../components/VerdictBadge";
+import ShareModal from "../components/ShareModal";
 
 const VERDICTS = ["BUY", "CONSIDER", "WATCH", "NO BUY"];
 
@@ -20,6 +21,13 @@ export default function SheriffSale() {
   const [expanded,    setExpanded]    = useState(null);
   const [hideLand,    setHideLand]    = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [shareTarget, setShareTarget] = useState(null);
+  const [favorites,   setFavorites]   = useState(() => {
+    try {
+      const raw = localStorage.getItem("ewp_favorites");
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
   // Advanced filters
   const [bidMin,      setBidMin]      = useState("");
   const [bidMax,      setBidMax]      = useState("");
@@ -58,6 +66,19 @@ export default function SheriffSale() {
 
   useEffect(() => () => clearInterval(pollRef.current), []);
 
+  useEffect(() => {
+    localStorage.setItem("ewp_favorites", JSON.stringify([...favorites]));
+  }, [favorites]);
+
+  const toggleFavorite = (saleId) => {
+    if (!saleId) return;
+    setFavorites(prev => {
+      const next = new Set(prev);
+      next.has(saleId) ? next.delete(saleId) : next.add(saleId);
+      return next;
+    });
+  };
+
   const clearFilters = () => {
     setFilter("ALL");
     setHideLand(false);
@@ -74,6 +95,7 @@ export default function SheriffSale() {
     setJob(null);
     setReport(null);
     setExpanded(null);
+    setShareTarget(null);
     setShowFilters(false);
     clearFilters();
   };
@@ -95,7 +117,8 @@ export default function SheriffSale() {
 
   const visible = deals
     .filter(d => {
-      if (filter !== "ALL" && d.verdict !== filter) return false;
+      if (filter === "FAVORITES" && !favorites.has(d.sale_id)) return false;
+      if (filter !== "ALL" && filter !== "FAVORITES" && d.verdict !== filter) return false;
       if (hideLand && isLandOnly(d)) return false;
       if (activeOnly && isPostponed(d)) return false;
       const bMin = parseMoney(bidMin), bMax = parseMoney(bidMax);
@@ -124,6 +147,8 @@ export default function SheriffSale() {
     !!minScore,
     muniFilter.size > 0,
   ].filter(Boolean).length;
+
+  const VERDICTS_WITH_FAVORITES = [...VERDICTS, "FAVORITES"];
 
   const Th = ({ col, label }) => (
     <th
@@ -278,6 +303,14 @@ export default function SheriffSale() {
                 {count} {label}
               </span>
             ))}
+            {favorites.size > 0 && (
+              <button
+                onClick={() => setFilter("FAVORITES")}
+                className={`px-3 py-1 rounded-full text-sm font-bold border transition-colors ${filter === "FAVORITES" ? "bg-brand-charcoal border-brand-charcoal text-white" : "bg-white border-brand-charcoal text-brand-charcoal hover:bg-brand-charcoal hover:text-white"}`}
+              >
+                ★ {favorites.size} Saved
+              </button>
+            )}
             <div className="ml-auto flex items-center gap-3">
               <DebugButton />
               <a href={pdfUrl(report.id)} target="_blank" rel="noreferrer"
@@ -305,10 +338,10 @@ export default function SheriffSale() {
               </button>
               {/* Verdict pills always visible */}
               <div className="flex gap-1.5 flex-wrap">
-                {["ALL", ...VERDICTS].map(v => (
+                {["ALL", ...VERDICTS_WITH_FAVORITES].map(v => (
                   <button key={v} onClick={() => setFilter(v)}
                     className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors ${filter === v ? "bg-brand-orange border-brand-orange text-white" : "border-brand-line text-gray-600 hover:border-brand-orange"}`}>
-                    {v}
+                    {v === "FAVORITES" ? `★ SAVED${favorites.size > 0 ? ` (${favorites.size})` : ""}` : v}
                   </button>
                 ))}
               </div>
@@ -508,12 +541,23 @@ export default function SheriffSale() {
                         <td className={`px-3 py-2 whitespace-nowrap font-medium ${d.flip_net_profit > 0 ? "text-verdict-buy" : "text-verdict-nobuy"}`}>{fmt(d.flip_net_profit)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{fmtP(d.cap_rate)}</td>
                         <td className="px-3 py-2"><VerdictBadge verdict={d.verdict} rating={d.perfect_pass_rating} /></td>
-                        <td className="px-3 py-2 text-gray-400">{expanded === i ? "▲" : "▼"}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          {d.sale_id && (
+                            <button
+                              onClick={e => { e.stopPropagation(); toggleFavorite(d.sale_id); }}
+                              title={favorites.has(d.sale_id) ? "Remove from saved" : "Save property"}
+                              className={`mr-2 text-base transition-colors ${favorites.has(d.sale_id) ? "text-brand-orange" : "text-gray-300 hover:text-brand-orange"}`}
+                            >
+                              {favorites.has(d.sale_id) ? "★" : "☆"}
+                            </button>
+                          )}
+                          <span className="text-gray-400">{expanded === i ? "▲" : "▼"}</span>
+                        </td>
                       </tr>
                       {expanded === i && (
                         <tr key={`exp-${i}`} className="border-t border-brand-line bg-brand-gray/30">
                           <td colSpan={10} className="p-4">
-                            <PropertyCard deal={d} rank={i + 1} />
+                            <PropertyCard deal={d} rank={i + 1} onShare={setShareTarget} />
                           </td>
                         </tr>
                       )}
@@ -524,6 +568,10 @@ export default function SheriffSale() {
             </div>
           </div>
         </div>
+      )}
+
+      {shareTarget && (
+        <ShareModal deal={shareTarget} onClose={() => setShareTarget(null)} />
       )}
     </div>
   );
