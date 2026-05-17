@@ -2,11 +2,11 @@ import os
 import re
 import sys
 import smtplib
-import tempfile
 from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 
+import resend
 from fastapi import APIRouter, HTTPException
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
@@ -22,19 +22,8 @@ REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-
-def _smtp_config():
-    host = os.getenv("SMTP_HOST")
-    if not host:
-        return None
-    return {
-        "host":      host,
-        "port":      int(os.getenv("SMTP_PORT", "587")),
-        "user":      os.getenv("SMTP_USER", ""),
-        "password":  os.getenv("SMTP_PASS", ""),
-        "from_addr": os.getenv("FROM_EMAIL", os.getenv("SMTP_USER", "")),
-        "from_name": os.getenv("FROM_NAME", "Estella Wilson Properties"),
-    }
+FROM_EMAIL = os.getenv("FROM_EMAIL", "contact@estellawilson.com")
+FROM_NAME  = os.getenv("FROM_NAME",  "Estella Wilson Properties LLC")
 
 
 def _build_html(deal: dict, sender_name: str, recipient_name: str) -> str:
@@ -73,12 +62,12 @@ def _build_html(deal: dict, sender_name: str, recipient_name: str) -> str:
         else "<p style='margin:0 0 4px 0;'>A property analysis has been shared with you.</p>"
     )
 
-    sqft_str     = f" &middot; {int(deal['sqft']):,} sqft" if deal.get("sqft") else ""
-    built_str    = f" &middot; Built {deal['year_built']}" if deal.get("year_built") else ""
-    case_str     = f" &middot; Case {deal['case']}" if deal.get("case") else ""
-    rating_str   = (f" &nbsp;<span style='font-size:12px;color:#666666;font-weight:bold;'>"
-                    f"{deal['perfect_pass_rating']}</span>"
-                    if deal.get("perfect_pass_rating") else "")
+    sqft_str   = f" &middot; {int(deal['sqft']):,} sqft" if deal.get("sqft") else ""
+    built_str  = f" &middot; Built {deal['year_built']}" if deal.get("year_built") else ""
+    case_str   = f" &middot; Case {deal['case']}" if deal.get("case") else ""
+    rating_str = (f" &nbsp;<span style='font-size:12px;color:#666666;font-weight:bold;'>"
+                  f"{deal['perfect_pass_rating']}</span>"
+                  if deal.get("perfect_pass_rating") else "")
 
     flip_color = "#27AE60" if (deal.get("flip_net_profit") or 0) > 0 else "#E74C3C"
     dscr_str   = f"{deal['dscr']:.2f}" if deal.get("dscr") is not None else "—"
@@ -213,17 +202,65 @@ def _build_html(deal: dict, sender_name: str, recipient_name: str) -> str:
 </html>"""
 
 
+def _send_via_resend(subject: str, html_body: str, recipient_name: str,
+                     recipient_email: str, pdf_path: Path, pdf_name: str):
+    resend.api_key = os.getenv("RESEND_API_KEY")
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = list(f.read())
+    params: resend.Emails.SendParams = {
+        "from":        f"{FROM_NAME} <{FROM_EMAIL}>",
+        "to":          [f"{recipient_name} <{recipient_email}>"],
+        "subject":     subject,
+        "html":        html_body,
+        "attachments": [{"filename": pdf_name, "content": pdf_bytes}],
+    }
+    resend.Emails.send(params)
+
+
+def _send_via_smtp(subject: str, html_body: str, recipient_name: str,
+                   recipient_email: str, pdf_path: Path, pdf_name: str):
+    host     = os.getenv("SMTP_HOST")
+    port     = int(os.getenv("SMTP_PORT", "587"))
+    user     = os.getenv("SMTP_USER", "")
+    password = os.getenv("SMTP_PASS", "")
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"]    = f"{FROM_NAME} <{FROM_EMAIL}>"
+    msg["To"]      = f"{recipient_name} <{recipient_email}>"
+    msg.set_content(
+        f"See the attached PDF for the full property analysis.",
+        subtype="plain",
+    )
+    msg.add_alternative(html_body, subtype="html")
+    with open(pdf_path, "rb") as f:
+        msg.add_attachment(f.read(), maintype="application",
+                           subtype="pdf", filename=pdf_name)
+
+    smtp_cls = smtplib.SMTP_SSL if port == 465 else smtplib.SMTP
+    with smtp_cls(host, port, timeout=15) as smtp:
+        smtp.ehlo()
+        if port != 465:
+            smtp.starttls()
+            smtp.ehlo()
+        if user:
+            smtp.login(user, password)
+        smtp.send_message(msg)
+
+
 @router.post("/property")
 def share_property(req: SharePropertyRequest):
     if not _EMAIL_RE.match(req.recipient_email):
         raise HTTPException(400, "Invalid recipient email address.")
 
-    cfg = _smtp_config()
-    if not cfg:
+    use_resend = bool(os.getenv("RESEND_API_KEY"))
+    use_smtp   = bool(os.getenv("SMTP_HOST"))
+
+    if not use_resend and not use_smtp:
         raise HTTPException(
             503,
             "Email sharing is not configured on this server. "
-            "Set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.",
+            "Set RESEND_API_KEY (recommended) or SMTP_HOST/SMTP_USER/SMTP_PASS.",
         )
 
     d = req.deal
@@ -242,7 +279,6 @@ def share_property(req: SharePropertyRequest):
             sqft         = int(d.get("sqft") or 1000),
             bedrooms     = int(d.get("bedrooms") or 3),
         )
-        # Rehydrate all pre-computed fields so analyze() is never re-run
         for key, val in d.items():
             if hasattr(deal_obj, key):
                 try:
@@ -265,41 +301,17 @@ def share_property(req: SharePropertyRequest):
             skip_cover=True,
         )
 
+        subject   = (f"Property Analysis: {d.get('address', 'Property')} "
+                     f"[{d.get('verdict', '')}]")
         html_body = _build_html(d, req.sender_name or "", req.recipient_name)
 
-        msg = EmailMessage()
-        msg["Subject"] = (
-            f"Property Analysis: {d.get('address', 'Property')} "
-            f"[{d.get('verdict', '')}]"
-        )
-        msg["From"] = f"{cfg['from_name']} <{cfg['from_addr']}>"
-        msg["To"]   = f"{req.recipient_name} <{req.recipient_email}>"
-        msg.set_content(
-            f"Property analysis for {d.get('address', 'this property')} — "
-            f"Verdict: {d.get('verdict', '')} / Score: {d.get('score', '—')}/100. "
-            f"See the attached PDF for the full analysis.",
-            subtype="plain",
-        )
-        msg.add_alternative(html_body, subtype="html")
-
-        with open(pdf_path, "rb") as f:
-            msg.add_attachment(
-                f.read(),
-                maintype="application",
-                subtype="pdf",
-                filename=pdf_name,
-            )
-
-        smtp_cls = smtplib.SMTP_SSL if cfg["port"] == 465 else smtplib.SMTP
         try:
-            with smtp_cls(cfg["host"], cfg["port"], timeout=15) as smtp:
-                smtp.ehlo()
-                if cfg["port"] != 465:
-                    smtp.starttls()
-                    smtp.ehlo()
-                if cfg["user"]:
-                    smtp.login(cfg["user"], cfg["password"])
-                smtp.send_message(msg)
+            if use_resend:
+                _send_via_resend(subject, html_body, req.recipient_name,
+                                 req.recipient_email, pdf_path, pdf_name)
+            else:
+                _send_via_smtp(subject, html_body, req.recipient_name,
+                               req.recipient_email, pdf_path, pdf_name)
         except smtplib.SMTPAuthenticationError:
             raise HTTPException(500, "SMTP authentication failed. Check SMTP_USER and SMTP_PASS.")
         except smtplib.SMTPRecipientsRefused:
