@@ -23,7 +23,14 @@ export default function ShareModal({ deal, onClose }) {
       });
       setStatus("success");
     } catch (err) {
-      setErrorMsg(err.response?.data?.detail || "Failed to send. Please try again.");
+      const status = err.response?.status;
+      const detail = err.response?.data?.detail;
+      const msg = detail
+        ? `Error ${status}: ${detail}`
+        : err.message
+        ? `Error: ${err.message}`
+        : "Failed to send. Please try again.";
+      setErrorMsg(msg);
       setStatus("error");
     }
   };
