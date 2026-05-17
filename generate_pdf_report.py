@@ -657,6 +657,23 @@ def build_property_page(d: Deal, S: dict) -> list:
         ("RIGHTPADDING",(0, 0), (-1, -1), 2),
     ]))
     right_col.append(tiles2)
+    right_col.append(Spacer(1, 0.06 * inch))
+
+    tile3_data = [[
+        metric_tile("Min Bid",      fmt(d.min_bid),       ORANGE),
+        metric_tile("Sweet Spot ★", fmt(d.max_bid_70),    GREEN_OK),
+        metric_tile("Max Bid ⚠",    fmt(d.precise_mao),   colors.HexColor("#D97706")),
+        metric_tile("Flip Profit@Bid", fmt(d.flip_net_profit),
+                    GREEN_OK if d.flip_net_profit > 0 else RED_BAD),
+    ]]
+    tiles3 = Table(tile3_data,
+                   colWidths=[1.12 * inch] * 4)
+    tiles3.setStyle(TableStyle([
+        ("VALIGN",      (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING",(0, 0), (-1, -1), 2),
+    ]))
+    right_col.append(tiles3)
 
     # ── Assemble two-column layout ────────────────────────────────────────────
     two_col = Table(

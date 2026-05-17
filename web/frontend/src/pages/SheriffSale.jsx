@@ -509,6 +509,8 @@ export default function SheriffSale() {
                     <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Address</th>
                     <Th col="municipality"   label="Muni" />
                     <Th col="min_bid"        label="Min Bid" />
+                    <Th col="max_bid_70"     label="Sweet Spot" />
+                    <Th col="precise_mao"    label="Max Bid" />
                     <Th col="fmv"            label="FMV" />
                     <Th col="arv"            label="ARV" />
                     <Th col="flip_net_profit" label="Flip $" />
@@ -536,6 +538,8 @@ export default function SheriffSale() {
                         </td>
                         <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{d.municipality || "—"}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{fmt(d.min_bid)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap font-medium text-emerald-700">{fmt(d.max_bid_70)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap font-medium text-amber-600">{fmt(d.precise_mao)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{fmt(d.fmv)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{fmt(d.arv)}</td>
                         <td className={`px-3 py-2 whitespace-nowrap font-medium ${d.flip_net_profit > 0 ? "text-verdict-buy" : "text-verdict-nobuy"}`}>{fmt(d.flip_net_profit)}</td>
@@ -556,7 +560,7 @@ export default function SheriffSale() {
                       </tr>
                       {expanded === i && (
                         <tr key={`exp-${i}`} className="border-t border-brand-line bg-brand-gray/30">
-                          <td colSpan={10} className="p-4">
+                          <td colSpan={12} className="p-4">
                             <PropertyCard deal={d} rank={i + 1} onShare={setShareTarget} />
                           </td>
                         </tr>

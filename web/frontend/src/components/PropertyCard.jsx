@@ -145,6 +145,58 @@ export default function PropertyCard({ deal, rank, onShare }) {
         <VerdictBadge verdict={deal.verdict} rating={deal.perfect_pass_rating} />
       </div>
 
+      {/* Bid Strategy */}
+      <div className="px-5 py-4 bg-white border-b border-brand-line">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Bid Strategy</p>
+        <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="rounded-lg border border-brand-line bg-brand-gray p-3 text-center">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Min Bid</p>
+            <p className="text-lg font-bold text-brand-charcoal">
+              {deal.min_bid != null ? `$${Number(deal.min_bid).toLocaleString(undefined, {maximumFractionDigits:0})}` : "—"}
+            </p>
+            <p className="text-[10px] text-gray-400 mt-1">Auction floor</p>
+          </div>
+          <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-3 text-center">
+            <p className="text-[10px] text-emerald-600 uppercase tracking-wide font-semibold mb-1">Sweet Spot ★</p>
+            <p className="text-lg font-bold text-emerald-700">
+              {deal.max_bid_70 != null ? `$${Number(deal.max_bid_70).toLocaleString(undefined, {maximumFractionDigits:0})}` : "—"}
+            </p>
+            <p className="text-[10px] text-emerald-600 mt-1">70% rule target</p>
+          </div>
+          <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3 text-center">
+            <p className="text-[10px] text-amber-600 uppercase tracking-wide font-semibold mb-1">Max Bid ⚠</p>
+            <p className="text-lg font-bold text-amber-700">
+              {deal.precise_mao != null ? `$${Number(deal.precise_mao).toLocaleString(undefined, {maximumFractionDigits:0})}` : "—"}
+            </p>
+            <p className="text-[10px] text-amber-600 mt-1">$25k profit floor</p>
+          </div>
+        </div>
+        {deal.min_bid != null && deal.precise_mao != null && deal.max_bid_70 != null && (
+          <div className="space-y-1">
+            <div className="relative h-2 bg-gray-100 rounded-full overflow-hidden">
+              {(() => {
+                const lo = deal.min_bid, hi = deal.precise_mao, sweet = deal.max_bid_70;
+                const sweetPct = Math.min(100, Math.max(0, ((sweet - lo) / (hi - lo)) * 100));
+                return (
+                  <>
+                    <div className="absolute inset-y-0 left-0 bg-emerald-400 rounded-full" style={{width: `${sweetPct}%`}} />
+                    <div className="absolute inset-y-0 rounded-full bg-amber-300" style={{left:`${sweetPct}%`, right:0}} />
+                  </>
+                );
+              })()}
+            </div>
+            <p className="text-[11px] text-gray-500 text-center">
+              Bid between{" "}
+              <span className="font-semibold text-emerald-700">${Number(deal.min_bid).toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+              {" "}and{" "}
+              <span className="font-semibold text-emerald-700">${Number(deal.max_bid_70).toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+              {" "}for a strong deal — never exceed{" "}
+              <span className="font-semibold text-amber-600">${Number(deal.precise_mao).toLocaleString(undefined,{maximumFractionDigits:0})}</span>.
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Metric tiles */}
       <div className="px-5 py-4 bg-white border-b border-brand-line">
         <MetricGrid deal={deal} />
