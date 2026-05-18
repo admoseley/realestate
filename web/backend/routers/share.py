@@ -26,7 +26,7 @@ FROM_EMAIL = os.getenv("FROM_EMAIL", "contact@estellawilson.com")
 FROM_NAME  = os.getenv("FROM_NAME",  "Estella Wilson Properties LLC")
 
 
-def _build_html(deal: dict, sender_name: str, recipient_name: str) -> str:
+def _build_html(deal: dict, sender_name: str, recipient_name: str, **kwargs) -> str:
     fmt  = lambda v: f"${v:,.0f}" if v is not None else "—"
     fmtp = lambda v: f"{v:.1f}%" if v is not None else "—"
 
@@ -61,6 +61,20 @@ def _build_html(deal: dict, sender_name: str, recipient_name: str) -> str:
         if sender_name
         else "<p style='margin:0 0 4px 0;'>A property analysis has been shared with you.</p>"
     )
+
+    note = kwargs.get("note", "")
+    note_block = ""
+    if note:
+        note_block = f"""
+        <tr>
+          <td style="padding:0 28px 16px 28px;border-top:1px solid #DDDDDD;">
+            <p style="margin:12px 0 6px 0;font-size:12px;font-weight:bold;color:#2B2B2B;
+                      text-transform:uppercase;letter-spacing:0.5px;">Note from Sender</p>
+            <p style="margin:0;font-size:13px;color:#2B2B2B;line-height:1.6;
+                      background:#F9F9F9;border-left:3px solid #F5A51B;padding:10px 14px;
+                      border-radius:0 6px 6px 0;">{note}</p>
+          </td>
+        </tr>"""
 
     sqft_str   = f" &middot; {int(deal['sqft']):,} sqft" if deal.get("sqft") else ""
     built_str  = f" &middot; Built {deal['year_built']}" if deal.get("year_built") else ""
@@ -183,6 +197,8 @@ def _build_html(deal: dict, sender_name: str, recipient_name: str) -> str:
         </td>
       </tr>
 
+      {note_block}
+
       {recommendation_block}
 
       <tr>
@@ -302,8 +318,9 @@ def share_property(req: SharePropertyRequest):
         )
 
         subject   = (f"Property Analysis: {d.get('address', 'Property')} "
-                     f"[{d.get('verdict', '')}]")
-        html_body = _build_html(d, req.sender_name or "", req.recipient_name)
+                     f"[{d.get('verdict', '')}]").replace("\n", " ").replace("\r", " ")
+        html_body = _build_html(d, req.sender_name or "", req.recipient_name,
+                                note=req.note or "")
 
         try:
             if use_resend:

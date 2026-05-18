@@ -5,6 +5,7 @@ export default function ShareModal({ deal, onClose }) {
   const [recipientName,  setRecipientName]  = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [senderName,     setSenderName]     = useState("");
+  const [note,           setNote]           = useState("");
   const [status,         setStatus]         = useState("idle"); // idle | sending | success | error
   const [errorMsg,       setErrorMsg]       = useState("");
 
@@ -19,6 +20,7 @@ export default function ShareModal({ deal, onClose }) {
         recipient_name:  recipientName.trim(),
         recipient_email: recipientEmail.trim(),
         sender_name:     senderName.trim() || undefined,
+        note:            note.trim() || undefined,
         deal,
       });
       setStatus("success");
@@ -120,6 +122,19 @@ export default function ShareModal({ deal, onClose }) {
                   onChange={e => setSenderName(e.target.value)}
                   placeholder="e.g. Estella Wilson"
                   className="w-full border border-brand-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Add a Note{" "}
+                  <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  placeholder="Add context or a personal message for the recipient…"
+                  rows={3}
+                  className="w-full border border-brand-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange resize-none"
                 />
               </div>
             </div>

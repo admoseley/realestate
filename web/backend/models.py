@@ -59,4 +59,5 @@ class SharePropertyRequest(BaseModel):
     recipient_name:  str
     recipient_email: str
     sender_name:     Optional[str] = None
+    note:            Optional[str] = None
     deal:            dict
