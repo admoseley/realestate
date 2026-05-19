@@ -24,6 +24,8 @@ export default function SheriffSale() {
   const [showFilters, setShowFilters] = useState(false);
   const [shareTarget,        setShareTarget]        = useState(null);
   const [shareFavoritesOpen, setShareFavoritesOpen] = useState(false);
+  const [editingAddr,        setEditingAddr]        = useState(null);
+  const [addrDraft,          setAddrDraft]          = useState("");
   const [favorites,   setFavorites]   = useState(() => {
     try {
       const raw = localStorage.getItem("ewp_favorites");
@@ -101,6 +103,23 @@ export default function SheriffSale() {
     setShareFavoritesOpen(false);
     setShowFilters(false);
     clearFilters();
+  };
+
+  const updateDealAddress = (targetDeal, newAddress) => {
+    const trimmed = newAddress.trim();
+    if (!trimmed) return;
+    setReport(prev => ({
+      ...prev,
+      deals: prev.deals.map(d => {
+        const match = targetDeal.sale_id ? d.sale_id === targetDeal.sale_id : d === targetDeal;
+        return match ? { ...d, address: trimmed } : d;
+      }),
+    }));
+  };
+
+  const commitAddr = (d) => {
+    updateDealAddress(d, addrDraft);
+    setEditingAddr(null);
   };
 
   const sort = (col) => {
@@ -540,7 +559,35 @@ export default function SheriffSale() {
                       >
                         <td className="px-3 py-2 font-bold text-brand-orange">{d.score ?? "—"}</td>
                         <td className="px-3 py-2 text-brand-charcoal font-medium max-w-xs">
-                          <p className="leading-snug">{d.address}</p>
+                          {editingAddr === d ? (
+                            <input
+                              autoFocus
+                              value={addrDraft}
+                              onChange={e => setAddrDraft(e.target.value)}
+                              onBlur={() => commitAddr(d)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") commitAddr(d);
+                                if (e.key === "Escape") setEditingAddr(null);
+                              }}
+                              onClick={e => e.stopPropagation()}
+                              className="w-full text-sm font-medium border border-brand-orange rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-brand-orange"
+                            />
+                          ) : (
+                            <div className="flex items-start gap-1 group">
+                              <p className="leading-snug">{d.address}</p>
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setEditingAddr(d);
+                                  setAddrDraft(d.address);
+                                }}
+                                title="Edit address"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 shrink-0 text-gray-400 hover:text-brand-orange text-xs leading-none"
+                              >
+                                ✎
+                              </button>
+                            </div>
+                          )}
                           {isLandOnly(d) && (
                             <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide bg-amber-100 text-amber-800 border border-amber-300">
                               LAND ONLY
