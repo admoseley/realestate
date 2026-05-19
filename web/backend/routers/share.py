@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parents[3]))
 
 from investment_analyzer import Deal
 from generate_pdf_report import build_and_save_pdf
-from models import SharePropertyRequest
+from models import SharePropertyRequest, ShareFavoritesRequest
 
 router = APIRouter(prefix="/api/share", tags=["share"])
 
@@ -218,6 +218,203 @@ def _build_html(deal: dict, sender_name: str, recipient_name: str, **kwargs) -> 
 </html>"""
 
 
+def _property_section_rows(deal: dict) -> str:
+    fmt  = lambda v: f"${v:,.0f}" if v is not None else "—"
+    fmtp = lambda v: f"{v:.1f}%" if v is not None else "—"
+
+    verdict = deal.get("verdict", "")
+    verdict_color = {"BUY": "#27AE60", "CONSIDER": "#F5A51B",
+                     "NO BUY": "#E74C3C", "WATCH": "#F39C12"}.get(verdict, "#666666")
+
+    red_flags_html = "".join(
+        f"<li style='color:#E74C3C;margin-bottom:4px;'>&#9888; {f}</li>"
+        for f in (deal.get("red_flags") or [])
+    )
+    red_flags_block = (
+        f"<ul style='margin:0;padding-left:20px;'>{red_flags_html}</ul>"
+        if red_flags_html
+        else "<p style='color:#27AE60;margin:0;'>None identified</p>"
+    )
+
+    recommendation = deal.get("recommendation") or deal.get("strategy") or ""
+    recommendation_block = ""
+    if recommendation:
+        recommendation_block = f"""
+      <tr>
+        <td style="padding:0 28px 16px 28px;border-top:1px solid #DDDDDD;">
+          <p style="margin:12px 0 6px 0;font-size:12px;font-weight:bold;color:#2B2B2B;
+                    text-transform:uppercase;letter-spacing:0.5px;">Recommendation</p>
+          <p style="margin:0;font-size:13px;color:#2B2B2B;line-height:1.5;">{recommendation}</p>
+        </td>
+      </tr>"""
+
+    sqft_str   = f" &middot; {int(deal['sqft']):,} sqft" if deal.get("sqft") else ""
+    built_str  = f" &middot; Built {deal['year_built']}" if deal.get("year_built") else ""
+    case_str   = f" &middot; Case {deal['case']}" if deal.get("case") else ""
+    rating_str = (f" &nbsp;<span style='font-size:12px;color:#666666;font-weight:bold;'>"
+                  f"{deal['perfect_pass_rating']}</span>"
+                  if deal.get("perfect_pass_rating") else "")
+
+    flip_color = "#27AE60" if (deal.get("flip_net_profit") or 0) > 0 else "#E74C3C"
+    dscr_str   = f"{deal['dscr']:.2f}" if deal.get("dscr") is not None else "—"
+
+    return f"""
+      <tr>
+        <td style="background:#2B2B2B;padding:14px 28px;border-top:3px solid #F5A51B;">
+          <p style="margin:0;color:#ffffff;font-size:16px;font-weight:bold;">
+            {deal.get('address', 'Unknown Address')}
+          </p>
+          <p style="margin:4px 0 0 0;color:#FFDDAA;font-size:11px;">
+            {deal.get('municipality', '')}{case_str}{sqft_str}{built_str}
+          </p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:16px 28px 8px 28px;">
+          <span style="display:inline-block;background:{verdict_color};color:#ffffff;
+                       font-weight:bold;font-size:14px;padding:6px 18px;border-radius:20px;">
+            {verdict or '—'}
+          </span>{rating_str}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:8px 28px 16px 28px;">
+          <table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse;">
+            <tr style="background:#F4F4F4;">
+              <td style="border:1px solid #DDDDDD;text-align:center;width:25%;">
+                <p style="margin:0;font-size:10px;color:#666666;">SCORE</p>
+                <p style="margin:4px 0 0 0;font-size:22px;font-weight:bold;color:#F5A51B;">
+                  {deal.get('score', '—')}/100</p>
+              </td>
+              <td style="border:1px solid #DDDDDD;text-align:center;width:25%;">
+                <p style="margin:0;font-size:10px;color:#666666;">MIN BID</p>
+                <p style="margin:4px 0 0 0;font-size:16px;font-weight:bold;color:#2B2B2B;">
+                  {fmt(deal.get('min_bid'))}</p>
+              </td>
+              <td style="border:1px solid #DDDDDD;text-align:center;width:25%;">
+                <p style="margin:0;font-size:10px;color:#666666;">FMV</p>
+                <p style="margin:4px 0 0 0;font-size:16px;font-weight:bold;color:#2B2B2B;">
+                  {fmt(deal.get('fmv'))}</p>
+              </td>
+              <td style="border:1px solid #DDDDDD;text-align:center;width:25%;">
+                <p style="margin:0;font-size:10px;color:#666666;">ARV</p>
+                <p style="margin:4px 0 0 0;font-size:16px;font-weight:bold;color:#2B2B2B;">
+                  {fmt(deal.get('arv'))}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #DDDDDD;text-align:center;">
+                <p style="margin:0;font-size:10px;color:#666666;">FLIP PROFIT</p>
+                <p style="margin:4px 0 0 0;font-size:15px;font-weight:bold;color:{flip_color};">
+                  {fmt(deal.get('flip_net_profit'))}</p>
+              </td>
+              <td style="border:1px solid #DDDDDD;text-align:center;">
+                <p style="margin:0;font-size:10px;color:#666666;">CAP RATE</p>
+                <p style="margin:4px 0 0 0;font-size:15px;font-weight:bold;color:#2B2B2B;">
+                  {fmtp(deal.get('cap_rate'))}</p>
+              </td>
+              <td style="border:1px solid #DDDDDD;text-align:center;">
+                <p style="margin:0;font-size:10px;color:#666666;">DSCR</p>
+                <p style="margin:4px 0 0 0;font-size:15px;font-weight:bold;color:#2B2B2B;">
+                  {dscr_str}</p>
+              </td>
+              <td style="border:1px solid #DDDDDD;text-align:center;">
+                <p style="margin:0;font-size:10px;color:#666666;">MO. NOI</p>
+                <p style="margin:4px 0 0 0;font-size:15px;font-weight:bold;color:#2B2B2B;">
+                  {fmt(deal.get('monthly_noi'))}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 28px 16px 28px;border-top:1px solid #DDDDDD;">
+          <p style="margin:12px 0 6px 0;font-size:12px;font-weight:bold;color:#2B2B2B;
+                    text-transform:uppercase;letter-spacing:0.5px;">Red Flags</p>
+          {red_flags_block}
+        </td>
+      </tr>
+      {recommendation_block}"""
+
+
+def _build_html_multi(deals: list, sender_name: str, recipient_name: str, **kwargs) -> str:
+    n = len(deals)
+    sender_line = (
+        f"<p style='margin:0 0 4px 0;'>{sender_name} has shared {n} saved properties with you.</p>"
+        if sender_name
+        else f"<p style='margin:0 0 4px 0;'>{n} saved properties have been shared with you.</p>"
+    )
+
+    note = kwargs.get("note", "")
+    note_block = ""
+    if note:
+        note_block = f"""
+      <tr>
+        <td style="padding:0 28px 16px 28px;border-top:1px solid #DDDDDD;">
+          <p style="margin:12px 0 6px 0;font-size:12px;font-weight:bold;color:#2B2B2B;
+                    text-transform:uppercase;letter-spacing:0.5px;">Note from Sender</p>
+          <p style="margin:0;font-size:13px;color:#2B2B2B;line-height:1.6;
+                    background:#F9F9F9;border-left:3px solid #F5A51B;padding:10px 14px;
+                    border-radius:0 6px 6px 0;">{note}</p>
+        </td>
+      </tr>"""
+
+    property_rows = "".join(_property_section_rows(d) for d in deals)
+
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#F4F4F4;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#F4F4F4;padding:24px 0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0"
+           style="background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #DDDDDD;">
+
+      <tr>
+        <td style="background:#F5A51B;padding:20px 28px;">
+          <p style="margin:0;color:#ffffff;font-size:11px;font-weight:bold;
+                    letter-spacing:1px;text-transform:uppercase;">
+            Estella Wilson Properties LLC
+          </p>
+          <p style="margin:4px 0 0 0;color:#ffffff;font-size:20px;font-weight:bold;">
+            Saved Properties — Investment Analysis
+          </p>
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:20px 28px 8px 28px;color:#2B2B2B;font-size:14px;
+                   border-bottom:1px solid #DDDDDD;">
+          <p style="margin:0 0 4px 0;">Hello {recipient_name},</p>
+          {sender_line}
+          <p style="margin:8px 0 0 0;color:#666666;font-size:12px;">
+            The full analysis for all {n} properties is attached as a PDF.
+            Key metrics for each are summarized below.
+          </p>
+        </td>
+      </tr>
+
+      {note_block}
+
+      {property_rows}
+
+      <tr>
+        <td style="background:#F4F4F4;padding:14px 28px;border-top:1px solid #DDDDDD;">
+          <p style="margin:0;font-size:11px;color:#888888;text-align:center;">
+            Estella Wilson Properties LLC &mdash; Real Estate Investment Analysis<br>
+            This analysis is for informational purposes only and does not constitute
+            investment advice.
+          </p>
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
+
+
 def _send_via_resend(subject: str, html_body: str, recipient_name: str,
                      recipient_email: str, pdf_path: Path, pdf_name: str):
     resend.api_key = os.getenv("RESEND_API_KEY")
@@ -343,3 +540,86 @@ def share_property(req: SharePropertyRequest):
             pass
 
     return {"status": "sent", "recipient": req.recipient_email}
+
+
+@router.post("/favorites")
+def share_favorites(req: ShareFavoritesRequest):
+    if not _EMAIL_RE.match(req.recipient_email):
+        raise HTTPException(400, "Invalid recipient email address.")
+    if not req.deals:
+        raise HTTPException(422, "No deals provided.")
+
+    use_resend = bool(os.getenv("RESEND_API_KEY"))
+    use_smtp   = bool(os.getenv("SMTP_HOST"))
+
+    if not use_resend and not use_smtp:
+        raise HTTPException(
+            503,
+            "Email sharing is not configured on this server. "
+            "Set RESEND_API_KEY (recommended) or SMTP_HOST/SMTP_USER/SMTP_PASS.",
+        )
+
+    deal_objects = []
+    for d in req.deals:
+        try:
+            deal_obj = Deal(
+                sale_id      = str(d.get("sale_id") or ""),
+                case         = str(d.get("case") or ""),
+                address      = str(d.get("address") or "Unknown"),
+                municipality = str(d.get("municipality") or ""),
+                parcel       = str(d.get("parcel") or ""),
+                min_bid      = float(d.get("min_bid") or 0),
+                tax_bid      = float(d.get("tax_bid") or 0),
+                fmv          = float(d.get("fmv") or 0),
+                assessed     = float(d.get("assessed") or 0),
+                year_built   = int(d.get("year_built") or 1950),
+                sqft         = int(d.get("sqft") or 1000),
+                bedrooms     = int(d.get("bedrooms") or 3),
+            )
+            for key, val in d.items():
+                if hasattr(deal_obj, key):
+                    try:
+                        setattr(deal_obj, key, val)
+                    except Exception:
+                        pass
+            deal_objects.append(deal_obj)
+        except Exception as exc:
+            raise HTTPException(422, f"Invalid deal data: {exc}")
+
+    ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    pdf_name = f"SavedProperties_{ts}.pdf"
+    pdf_path = REPORTS_DIR / pdf_name
+
+    try:
+        build_and_save_pdf(
+            deal_objects,
+            pdf_path,
+            report_title=f"Saved Properties — {len(deal_objects)} Selected",
+            skip_cover=False,
+        )
+
+        subject   = f"Saved Properties Analysis — {len(deal_objects)} Properties"
+        html_body = _build_html_multi(req.deals, req.sender_name or "",
+                                      req.recipient_name, note=req.note or "")
+
+        try:
+            if use_resend:
+                _send_via_resend(subject, html_body, req.recipient_name,
+                                 req.recipient_email, pdf_path, pdf_name)
+            else:
+                _send_via_smtp(subject, html_body, req.recipient_name,
+                               req.recipient_email, pdf_path, pdf_name)
+        except smtplib.SMTPAuthenticationError:
+            raise HTTPException(500, "SMTP authentication failed. Check SMTP_USER and SMTP_PASS.")
+        except smtplib.SMTPRecipientsRefused:
+            raise HTTPException(400, "Recipient address was rejected by the mail server.")
+        except Exception as exc:
+            raise HTTPException(500, f"Failed to send email: {exc}")
+
+    finally:
+        try:
+            pdf_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    return {"status": "sent", "recipient": req.recipient_email, "count": len(deal_objects)}

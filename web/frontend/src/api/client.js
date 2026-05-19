@@ -46,4 +46,7 @@ export const debugAnalyzePdf = async (file) => {
 export const shareProperty = (payload) =>
   api.post("/share/property", payload).then(r => r.data);
 
+export const shareFavorites = (payload) =>
+  api.post("/share/favorites", payload).then(r => r.data);
+
 export default api;

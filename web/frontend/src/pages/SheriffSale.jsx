@@ -4,6 +4,7 @@ import ProgressStepper from "../components/ProgressStepper";
 import PropertyCard from "../components/PropertyCard";
 import VerdictBadge from "../components/VerdictBadge";
 import ShareModal from "../components/ShareModal";
+import ShareFavoritesModal from "../components/ShareFavoritesModal";
 
 const VERDICTS = ["BUY", "CONSIDER", "WATCH", "NO BUY"];
 
@@ -21,7 +22,8 @@ export default function SheriffSale() {
   const [expanded,    setExpanded]    = useState(null);
   const [hideLand,    setHideLand]    = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [shareTarget, setShareTarget] = useState(null);
+  const [shareTarget,        setShareTarget]        = useState(null);
+  const [shareFavoritesOpen, setShareFavoritesOpen] = useState(false);
   const [favorites,   setFavorites]   = useState(() => {
     try {
       const raw = localStorage.getItem("ewp_favorites");
@@ -96,6 +98,7 @@ export default function SheriffSale() {
     setReport(null);
     setExpanded(null);
     setShareTarget(null);
+    setShareFavoritesOpen(false);
     setShowFilters(false);
     clearFilters();
   };
@@ -304,12 +307,20 @@ export default function SheriffSale() {
               </span>
             ))}
             {favorites.size > 0 && (
-              <button
-                onClick={() => setFilter("FAVORITES")}
-                className={`px-3 py-1 rounded-full text-sm font-bold border transition-colors ${filter === "FAVORITES" ? "bg-brand-charcoal border-brand-charcoal text-white" : "bg-white border-brand-charcoal text-brand-charcoal hover:bg-brand-charcoal hover:text-white"}`}
-              >
-                ★ {favorites.size} Saved
-              </button>
+              <>
+                <button
+                  onClick={() => setFilter("FAVORITES")}
+                  className={`px-3 py-1 rounded-full text-sm font-bold border transition-colors ${filter === "FAVORITES" ? "bg-brand-charcoal border-brand-charcoal text-white" : "bg-white border-brand-charcoal text-brand-charcoal hover:bg-brand-charcoal hover:text-white"}`}
+                >
+                  ★ {favorites.size} Saved
+                </button>
+                <button
+                  onClick={() => setShareFavoritesOpen(true)}
+                  className="px-3 py-1 rounded-full text-sm font-bold border border-brand-orange text-brand-orange hover:bg-brand-orange hover:text-white transition-colors whitespace-nowrap"
+                >
+                  ✉ Share Saved
+                </button>
+              </>
             )}
             <div className="ml-auto flex items-center gap-3">
               <DebugButton />
@@ -576,6 +587,12 @@ export default function SheriffSale() {
 
       {shareTarget && (
         <ShareModal deal={shareTarget} onClose={() => setShareTarget(null)} />
+      )}
+      {shareFavoritesOpen && (
+        <ShareFavoritesModal
+          deals={deals.filter(d => favorites.has(d.sale_id))}
+          onClose={() => setShareFavoritesOpen(false)}
+        />
       )}
     </div>
   );
