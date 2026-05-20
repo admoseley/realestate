@@ -29,6 +29,21 @@ class Report(Base):
     deals_json     = Column(Text)         # JSON list of analyzed Deal dicts
 
 
+class PropertyDeal(Base):
+    __tablename__ = "property_deals"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    sale_id      = Column(String(200), unique=True, index=True, nullable=False)
+    source       = Column(String(20),  nullable=False)   # "sheriff_sale" | "spot_check"
+    address      = Column(String(500), nullable=False)
+    municipality = Column(String(200), nullable=True)
+    deal_json    = Column(Text,        nullable=False)
+    fingerprint  = Column(String(64),  nullable=True)    # SHA-256(address|min_bid|municipality)
+    pdf_hash     = Column(String(64),  nullable=True)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    updated_at   = Column(DateTime, default=datetime.utcnow)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 

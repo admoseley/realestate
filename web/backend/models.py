@@ -55,6 +55,15 @@ class SpotCheckResponse(BaseModel):
     warning:   Optional[str] = None
 
 
+class UpdateAddressRequest(BaseModel):
+    address: str
+
+
+class ClearDealsResult(BaseModel):
+    deleted: int
+    source:  Optional[str] = None
+
+
 class SharePropertyRequest(BaseModel):
     recipient_name:  str
     recipient_email: str

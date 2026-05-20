@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { runSpotCheck, pdfUrl } from "../api/client";
 import PropertyCard from "../components/PropertyCard";
 
 export default function SpotCheck() {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     address: "", price: "", fmv: "", sqft: "", year: "", beds: "", baths: "",
     parcel: "", municipality: "", no_lookup: false,
@@ -170,6 +172,16 @@ export default function SpotCheck() {
               className="bg-brand-charcoal text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-black transition-colors">
               ↓ Download PDF
             </a>
+          </div>
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-4 py-2 text-sm">
+            <span className="font-bold">✓</span>
+            <span>This property has been added to your deal list.</span>
+            <button
+              onClick={() => navigate("/")}
+              className="ml-auto text-brand-orange font-semibold hover:underline text-xs whitespace-nowrap"
+            >
+              View on Dashboard →
+            </button>
           </div>
           {result.warning && (
             <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">

@@ -49,4 +49,18 @@ export const shareProperty = (payload) =>
 export const shareFavorites = (payload) =>
   api.post("/share/favorites", payload).then(r => r.data);
 
+export const listDeals = (skip = 0, limit = 500, source = null) => {
+  const params = { skip, limit };
+  if (source) params.source = source;
+  return api.get("/deals", { params }).then(r => r.data);
+};
+
+export const clearDeals = (source = null) => {
+  const params = source ? { source } : {};
+  return api.delete("/deals", { params }).then(r => r.data);
+};
+
+export const updateDealAddress = (saleId, address) =>
+  api.patch(`/deals/${encodeURIComponent(saleId)}/address`, { address }).then(r => r.data);
+
 export default api;

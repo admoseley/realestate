@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from database import init_db
 from jobs import get_job
 from models import JobStatus
-from routers import sheriff_sale, spot_check, reports, debug, share
+from routers import sheriff_sale, spot_check, reports, debug, share, deals
 
 app = FastAPI(title="Estella Wilson Properties — Analysis API")
 
@@ -31,6 +31,7 @@ app.include_router(spot_check.router)
 app.include_router(reports.router)
 app.include_router(debug.router)
 app.include_router(share.router)
+app.include_router(deals.router)
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)

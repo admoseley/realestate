@@ -18,6 +18,7 @@ from sheriff_sale_analyzer import pdf_to_text, parse_sheriff_text, enrich_proper
 from database import Report, get_db
 from jobs import create_job, update_job, fail_job
 from models import JobStatus
+from deal_utils import upsert_deal, pdf_hash as compute_pdf_hash
 
 router      = APIRouter(prefix="/api/sheriff-sale", tags=["sheriff-sale"])
 REPORTS_DIR = Path(os.getenv("REPORTS_DIR", str(Path(__file__).parent.parent / "reports")))
@@ -31,7 +32,8 @@ def _run_pipeline(job_id: str, pdf_path: str,
     db: Session = next(db_factory())
     try:
         update_job(job_id, "running", 5, "Fetching sheriff sale PDF…")
-        pdf_path = Path(pdf_path)
+        pdf_path    = Path(pdf_path)
+        source_hash = compute_pdf_hash(pdf_path.read_bytes())
 
         # Step 2 — convert PDF → text
         update_job(job_id, "running", 15, "Converting PDF to text…")
@@ -135,7 +137,26 @@ def _run_pipeline(job_id: str, pdf_path: str,
         report.pdf_path = str(pdf_out)
         db.commit()
 
-        update_job(job_id, "done", 100, "Analysis complete!", report_id=report.id)
+        # Step 8 — upsert individual deal rows into property_deals
+        update_job(job_id, "running", 98, "Persisting deal records…", report_id=report.id)
+        counts = {"inserted": 0, "updated": 0, "unchanged": 0}
+        for analyzed_deal in deals:
+            outcome = upsert_deal(
+                db               = db,
+                sale_id          = analyzed_deal.sale_id,
+                source           = "sheriff_sale",
+                address          = analyzed_deal.address,
+                municipality     = analyzed_deal.municipality,
+                deal_dict        = asdict(analyzed_deal),
+                source_pdf_hash  = source_hash,
+            )
+            counts[outcome] += 1
+        db.commit()
+
+        done_msg = (f"Done — {counts['inserted']} new, "
+                    f"{counts['updated']} updated, "
+                    f"{counts['unchanged']} unchanged")
+        update_job(job_id, "done", 100, done_msg, report_id=report.id)
 
     except Exception as exc:
         fail_job(job_id, f"Pipeline error: {exc}")

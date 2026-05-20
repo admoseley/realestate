@@ -17,6 +17,7 @@ from spot_check import geocode_nominatim, parse_municipality, lookup_property
 
 from database import Report, get_db
 from models import SpotCheckRequest, SpotCheckResponse
+from deal_utils import upsert_deal, spot_sale_id
 
 router      = APIRouter(prefix="/api/spot-check", tags=["spot-check"])
 REPORTS_DIR = Path(os.getenv("REPORTS_DIR", str(Path(__file__).parent.parent / "reports")))
@@ -102,5 +103,17 @@ def run_spot_check(req: SpotCheckRequest, db: Session = Depends(get_db)):
     db.add(report)
     db.commit()
     db.refresh(report)
+
+    # Persist to unified deal list
+    sid = spot_sale_id(address, req.price)
+    upsert_deal(
+        db           = db,
+        sale_id      = sid,
+        source       = "spot_check",
+        address      = address,
+        municipality = municipality,
+        deal_dict    = deal_dict,
+    )
+    db.commit()
 
     return SpotCheckResponse(report_id=report.id, deal=deal_dict, warning=fmv_warning)

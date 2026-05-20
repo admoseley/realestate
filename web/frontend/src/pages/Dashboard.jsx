@@ -1,118 +1,524 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { listReports, pdfUrl } from "../api/client";
+import { useState, useEffect } from "react";
+import { listDeals, clearDeals, updateDealAddress } from "../api/client";
+import PropertyCard from "../components/PropertyCard";
+import VerdictBadge from "../components/VerdictBadge";
+import ShareModal from "../components/ShareModal";
+import ShareFavoritesModal from "../components/ShareFavoritesModal";
 
-function StatCard({ label, value, color }) {
-  return (
-    <div className="bg-white rounded-xl border border-brand-line p-5 text-center">
-      <p className={`text-3xl font-bold ${color}`}>{value}</p>
-      <p className="text-xs text-gray-500 mt-1">{label}</p>
-    </div>
-  );
-}
-
-function ActionCard({ title, desc, to }) {
-  const nav = useNavigate();
-  return (
-    <button
-      onClick={() => nav(to)}
-      className="bg-white rounded-xl border-2 border-brand-orange p-6 text-left hover:bg-brand-tint transition-colors w-full"
-    >
-      <p className="text-lg font-bold text-brand-charcoal">{title}</p>
-      <p className="text-sm text-gray-500 mt-1">{desc}</p>
-      <span className="mt-4 inline-block bg-brand-orange text-white text-xs font-bold px-4 py-1.5 rounded-full">
-        Start →
-      </span>
-    </button>
-  );
-}
+const VERDICTS = ["BUY", "CONSIDER", "WATCH", "NO BUY"];
 
 export default function Dashboard() {
-  const [reports, setReports] = useState([]);
+  const [deals,       setDeals]       = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [filter,      setFilter]      = useState("ALL");
+  const [sortCol,     setSortCol]     = useState("score");
+  const [sortAsc,     setSortAsc]     = useState(false);
+  const [expanded,    setExpanded]    = useState(null);
+  const [hideLand,    setHideLand]    = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [shareTarget,        setShareTarget]        = useState(null);
+  const [shareFavoritesOpen, setShareFavoritesOpen] = useState(false);
+  const [showClearConfirm,   setShowClearConfirm]   = useState(false);
+  const [editingAddr,        setEditingAddr]        = useState(null);
+  const [addrDraft,          setAddrDraft]          = useState("");
+  const [favorites, setFavorites] = useState(() => {
+    try {
+      const raw = localStorage.getItem("ewp_favorites");
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  // Advanced filters
+  const [bidMin,     setBidMin]     = useState("");
+  const [bidMax,     setBidMax]     = useState("");
+  const [fmvMin,     setFmvMin]     = useState("");
+  const [fmvMax,     setFmvMax]     = useState("");
+  const [minScore,   setMinScore]   = useState("");
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [muniFilter, setMuniFilter] = useState(new Set());
 
   useEffect(() => {
-    listReports(0, 5).then(setReports).catch(() => {});
+    setLoading(true);
+    listDeals(0, 500)
+      .then(data => setDeals(data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  const totalProps  = reports.reduce((s, r) => s + r.property_count, 0);
-  const totalBuy    = reports.reduce((s, r) => s + r.buy_count, 0);
-  const totalPerfect = reports.reduce((s, r) => s + r.perfect_count, 0);
+  useEffect(() => {
+    localStorage.setItem("ewp_favorites", JSON.stringify([...favorites]));
+  }, [favorites]);
+
+  const toggleFavorite = (saleId) => {
+    if (!saleId) return;
+    setFavorites(prev => {
+      const next = new Set(prev);
+      next.has(saleId) ? next.delete(saleId) : next.add(saleId);
+      return next;
+    });
+  };
+
+  const commitAddr = async (d) => {
+    const trimmed = addrDraft.trim();
+    if (!trimmed) { setEditingAddr(null); return; }
+    try {
+      await updateDealAddress(d.sale_id, trimmed);
+      setDeals(prev => prev.map(x =>
+        x.sale_id === d.sale_id ? { ...x, address: trimmed } : x
+      ));
+    } catch { /* non-critical */ }
+    setEditingAddr(null);
+  };
+
+  const handleClear = async () => {
+    await clearDeals();
+    setDeals([]);
+    setFavorites(new Set());
+    setShowClearConfirm(false);
+    setExpanded(null);
+    clearFilters();
+  };
+
+  const clearFilters = () => {
+    setFilter("ALL");
+    setHideLand(false);
+    setBidMin(""); setBidMax("");
+    setFmvMin(""); setFmvMax("");
+    setMinScore("");
+    setActiveOnly(false);
+    setMuniFilter(new Set());
+  };
+
+  const sort = (col) => {
+    if (sortCol === col) setSortAsc(a => !a);
+    else { setSortCol(col); setSortAsc(false); }
+  };
+
+  const isLandOnly  = (d) => d.red_flags?.some(f => f.startsWith("LAND ONLY"));
+  const isPostponed = (d) => d.postponed;
+  const landCount   = deals.filter(isLandOnly).length;
+  const allMunis    = [...new Set(deals.map(d => d.municipality).filter(Boolean))].sort();
+  const parseMoney  = (s) => { const n = parseFloat(String(s).replace(/[$,]/g, "")); return isNaN(n) ? null : n; };
+
+  const visible = deals
+    .filter(d => {
+      if (filter === "FAVORITES" && !favorites.has(d.sale_id)) return false;
+      if (filter !== "ALL" && filter !== "FAVORITES" && d.verdict !== filter) return false;
+      if (hideLand && isLandOnly(d)) return false;
+      if (activeOnly && isPostponed(d)) return false;
+      const bMin = parseMoney(bidMin), bMax = parseMoney(bidMax);
+      if (bMin != null && (d.min_bid ?? 0) < bMin) return false;
+      if (bMax != null && (d.min_bid ?? 0) > bMax) return false;
+      const fMin = parseMoney(fmvMin), fMax = parseMoney(fmvMax);
+      if (fMin != null && (d.fmv ?? 0) < fMin) return false;
+      if (fMax != null && (d.fmv ?? 0) > fMax) return false;
+      const ms = parseMoney(minScore);
+      if (ms != null && (d.score ?? 0) < ms) return false;
+      if (muniFilter.size > 0 && !muniFilter.has(d.municipality)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const av = a[sortCol] ?? 0, bv = b[sortCol] ?? 0;
+      return sortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+    });
+
+  const activeFilterCount = [
+    filter !== "ALL", hideLand, activeOnly,
+    !!bidMin, !!bidMax, !!fmvMin, !!fmvMax, !!minScore,
+    muniFilter.size > 0,
+  ].filter(Boolean).length;
+
+  const VERDICTS_WITH_FAVORITES = [...VERDICTS, "FAVORITES"];
+
+  const Th = ({ col, label }) => (
+    <th
+      className="px-3 py-2 text-left text-xs text-gray-500 font-medium cursor-pointer hover:text-brand-charcoal whitespace-nowrap"
+      onClick={() => sort(col)}
+    >
+      {label} {sortCol === col ? (sortAsc ? "↑" : "↓") : ""}
+    </th>
+  );
+
+  const fmt  = (v) => v != null ? `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—";
+  const fmtP = (v) => v != null ? `${Number(v).toFixed(1)}%` : "—";
+
+  // Stat counts
+  const buyCount     = deals.filter(d => d.verdict === "BUY").length;
+  const perfectCount = deals.filter(d => d.perfect_pass_rating === "PERFECT").length;
+  const spotCount    = deals.filter(d => d.source === "spot_check").length;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-brand-charcoal">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-1">Estella Wilson Properties LLC — Investment Analysis</p>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-brand-charcoal">Properties</h1>
+          <p className="text-sm text-gray-500 mt-1">All active deal records — sheriff sale + spot checks</p>
+        </div>
+        {deals.length > 0 && (
+          <button
+            onClick={() => setShowClearConfirm(true)}
+            className="text-sm text-gray-400 hover:text-red-500 border border-brand-line hover:border-red-300 rounded-lg px-4 py-2 transition-colors"
+          >
+            Clear Records
+          </button>
+        )}
       </div>
 
-      {/* Action cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ActionCard
-          title="Sheriff Sale Analysis"
-          desc="Batch-analyze the Allegheny County sheriff sale PDF — find F&C properties ranked by score."
-          to="/sheriff-sale"
-        />
-        <ActionCard
-          title="Property Spot Check"
-          desc="Enter any address + price to get a full investment analysis report on a single property."
-          to="/spot-check"
-        />
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Total Reports"    value={reports.length} color="text-brand-charcoal" />
-        <StatCard label="Properties Analyzed" value={totalProps} color="text-brand-charcoal" />
-        <StatCard label="BUY Verdicts"     value={totalBuy}    color="text-verdict-buy" />
-        <StatCard label="PERFECT Deals"    value={totalPerfect} color="text-brand-orange" />
-      </div>
-
-      {/* Recent reports */}
-      {reports.length > 0 && (
-        <div className="bg-white rounded-xl border border-brand-line overflow-hidden">
-          <div className="px-5 py-4 border-b border-brand-line">
-            <h2 className="font-semibold text-brand-charcoal">Recent Reports</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-brand-gray text-gray-500 text-xs">
-                <tr>
-                  <th className="px-4 py-2 text-left">Date</th>
-                  <th className="px-4 py-2 text-left">Title</th>
-                  <th className="px-4 py-2 text-center">Props</th>
-                  <th className="px-4 py-2 text-center">BUY</th>
-                  <th className="px-4 py-2 text-center">PERFECT</th>
-                  <th className="px-4 py-2 text-center">PDF</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports.map(r => (
-                  <tr key={r.id} className="border-t border-brand-line hover:bg-brand-gray/50">
-                    <td className="px-4 py-2 text-gray-500 whitespace-nowrap">
-                      {new Date(r.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-2 text-brand-charcoal font-medium truncate max-w-xs">{r.title}</td>
-                    <td className="px-4 py-2 text-center">{r.property_count}</td>
-                    <td className="px-4 py-2 text-center font-bold text-verdict-buy">{r.buy_count}</td>
-                    <td className="px-4 py-2 text-center font-bold text-brand-orange">{r.perfect_count}</td>
-                    <td className="px-4 py-2 text-center">
-                      {r.has_pdf && (
-                        <a
-                          href={pdfUrl(r.id)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-brand-orange hover:underline font-semibold"
-                        >
-                          ↓ PDF
-                        </a>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Clear confirmation dialog */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowClearConfirm(false); }}>
+          <div className="bg-white rounded-xl border border-brand-line shadow-xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-base font-bold text-brand-charcoal">Clear All Records?</h2>
+            <p className="text-sm text-gray-600">
+              This will permanently remove all <span className="font-semibold">{deals.length} deal records</span>.
+              This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowClearConfirm(false)}
+                className="flex-1 border border-brand-line text-gray-600 font-semibold py-2 rounded-lg hover:bg-brand-gray transition-colors text-sm">
+                Cancel
+              </button>
+              <button onClick={handleClear}
+                className="flex-1 bg-red-500 text-white font-bold py-2 rounded-lg hover:bg-red-600 transition-colors text-sm">
+                Clear All
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {loading ? (
+        <div className="bg-white rounded-xl border border-brand-line p-12 text-center text-gray-400">
+          Loading deals…
+        </div>
+      ) : deals.length === 0 ? (
+        <div className="bg-white rounded-xl border border-brand-line p-12 text-center space-y-3">
+          <p className="text-3xl">📋</p>
+          <p className="text-brand-charcoal font-semibold">No deals yet</p>
+          <p className="text-sm text-gray-500">Upload a sheriff sale PDF or run a Spot Check to get started.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Summary chips */}
+          <div className="flex flex-wrap gap-2 items-center">
+            {[
+              { label: "TOTAL",   count: deals.length,  color: "bg-brand-charcoal text-white" },
+              { label: "BUY",     count: buyCount,      color: "bg-verdict-buy text-white" },
+              { label: "PERFECT", count: perfectCount,  color: "bg-emerald-600 text-white" },
+              { label: "SPOT",    count: spotCount,     color: "bg-indigo-500 text-white" },
+            ].map(({ label, count, color }) => (
+              <span key={label} className={`px-3 py-1 rounded-full text-sm font-bold ${color}`}>
+                {count} {label}
+              </span>
+            ))}
+            {favorites.size > 0 && (
+              <>
+                <button
+                  onClick={() => setFilter("FAVORITES")}
+                  className={`px-3 py-1 rounded-full text-sm font-bold border transition-colors ${filter === "FAVORITES" ? "bg-brand-charcoal border-brand-charcoal text-white" : "bg-white border-brand-charcoal text-brand-charcoal hover:bg-brand-charcoal hover:text-white"}`}
+                >
+                  ★ {favorites.size} Saved
+                </button>
+                <button
+                  onClick={() => setShareFavoritesOpen(true)}
+                  className="px-3 py-1 rounded-full text-sm font-bold border border-brand-orange text-brand-orange hover:bg-brand-orange hover:text-white transition-colors whitespace-nowrap"
+                >
+                  ✉ Share Saved
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Filter bar */}
+          <div className="bg-white rounded-xl border border-brand-line overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-brand-line">
+              <button
+                onClick={() => setShowFilters(v => !v)}
+                className="flex items-center gap-2 text-sm font-semibold text-brand-charcoal hover:text-brand-orange transition-colors"
+              >
+                <span>{showFilters ? "▲" : "▼"}</span>
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-orange text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+              <div className="flex gap-1.5 flex-wrap">
+                {["ALL", ...VERDICTS_WITH_FAVORITES].map(v => (
+                  <button key={v} onClick={() => setFilter(v)}
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors ${filter === v ? "bg-brand-orange border-brand-orange text-white" : "border-brand-line text-gray-600 hover:border-brand-orange"}`}>
+                    {v === "FAVORITES" ? `★ SAVED${favorites.size > 0 ? ` (${favorites.size})` : ""}` : v}
+                  </button>
+                ))}
+              </div>
+              <span className="ml-auto text-xs text-gray-400">{visible.length} of {deals.length} shown</span>
+              {activeFilterCount > 0 && (
+                <button onClick={clearFilters} className="text-xs text-gray-400 hover:text-red-500 transition-colors">
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            {showFilters && (
+              <div className="px-4 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Min Bid Range</p>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                      <input type="text" placeholder="Min" value={bidMin} onChange={e => setBidMin(e.target.value)}
+                        className="w-full border border-brand-line rounded-lg pl-5 pr-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-orange" />
+                    </div>
+                    <span className="self-center text-gray-400 text-xs">–</span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                      <input type="text" placeholder="Max" value={bidMax} onChange={e => setBidMax(e.target.value)}
+                        className="w-full border border-brand-line rounded-lg pl-5 pr-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-orange" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { label: "< $10K",    min: "",      max: "10000"  },
+                      { label: "$10K–$25K",  min: "10000", max: "25000"  },
+                      { label: "$25K–$50K",  min: "25000", max: "50000"  },
+                      { label: "$50K–$100K", min: "50000", max: "100000" },
+                      { label: "> $100K",    min: "100000",max: ""       },
+                    ].map(({ label, min, max }) => {
+                      const active = bidMin === min && bidMax === max;
+                      return (
+                        <button key={label}
+                          onClick={() => { setBidMin(active ? "" : min); setBidMax(active ? "" : max); }}
+                          className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${active ? "bg-brand-orange border-brand-orange text-white" : "border-brand-line text-gray-600 hover:border-brand-orange"}`}>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">FMV Range</p>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                      <input type="text" placeholder="Min" value={fmvMin} onChange={e => setFmvMin(e.target.value)}
+                        className="w-full border border-brand-line rounded-lg pl-5 pr-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-orange" />
+                    </div>
+                    <span className="self-center text-gray-400 text-xs">–</span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                      <input type="text" placeholder="Max" value={fmvMax} onChange={e => setFmvMax(e.target.value)}
+                        className="w-full border border-brand-line rounded-lg pl-5 pr-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-orange" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { label: "< $50K",     min: "",       max: "50000"  },
+                      { label: "$50K–$100K",  min: "50000",  max: "100000" },
+                      { label: "$100K–$200K", min: "100000", max: "200000" },
+                      { label: "> $200K",     min: "200000", max: ""       },
+                    ].map(({ label, min, max }) => {
+                      const active = fmvMin === min && fmvMax === max;
+                      return (
+                        <button key={label}
+                          onClick={() => { setFmvMin(active ? "" : min); setFmvMax(active ? "" : max); }}
+                          className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${active ? "bg-brand-orange border-brand-orange text-white" : "border-brand-line text-gray-600 hover:border-brand-orange"}`}>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Minimum Score</p>
+                    <div className="flex gap-2 items-center">
+                      <input type="number" min="0" max="100" placeholder="0" value={minScore} onChange={e => setMinScore(e.target.value)}
+                        className="w-20 border border-brand-line rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-orange" />
+                      <div className="flex gap-1">
+                        {[40, 60, 75].map(s => (
+                          <button key={s} onClick={() => setMinScore(minScore === String(s) ? "" : String(s))}
+                            className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${minScore === String(s) ? "bg-brand-orange border-brand-orange text-white" : "border-brand-line text-gray-600 hover:border-brand-orange"}`}>
+                            {s}+
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Property Flags</p>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)}
+                        className="rounded border-brand-line accent-brand-orange" />
+                      <span className="text-xs text-gray-700">Active sales only (hide postponed)</span>
+                    </label>
+                    {landCount > 0 && (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={hideLand} onChange={e => setHideLand(e.target.checked)}
+                          className="rounded border-brand-line accent-brand-orange" />
+                        <span className="text-xs text-gray-700">Hide land-only parcels ({landCount})</span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {allMunis.length > 0 && (
+                  <div className="sm:col-span-2 lg:col-span-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Municipality</p>
+                      {muniFilter.size > 0 && (
+                        <button onClick={() => setMuniFilter(new Set())} className="text-[11px] text-gray-400 hover:text-red-500 transition-colors">
+                          Clear ({muniFilter.size} selected)
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                      {allMunis.map(m => {
+                        const sel   = muniFilter.has(m);
+                        const count = deals.filter(d => d.municipality === m).length;
+                        return (
+                          <button key={m}
+                            onClick={() => setMuniFilter(prev => {
+                              const next = new Set(prev);
+                              sel ? next.delete(m) : next.add(m);
+                              return next;
+                            })}
+                            className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${sel ? "bg-brand-charcoal border-brand-charcoal text-white" : "border-brand-line text-gray-600 hover:border-brand-orange"}`}>
+                            {m} <span className="opacity-60">({count})</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-xl border border-brand-line overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-brand-gray border-b border-brand-line">
+                  <tr>
+                    <Th col="score"           label="Score" />
+                    <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Address</th>
+                    <Th col="municipality"    label="Muni" />
+                    <Th col="min_bid"         label="Min Bid" />
+                    <Th col="max_bid_70"      label="Sweet Spot" />
+                    <Th col="precise_mao"     label="Max Bid" />
+                    <Th col="fmv"             label="FMV" />
+                    <Th col="arv"             label="ARV" />
+                    <Th col="flip_net_profit" label="Flip $" />
+                    <Th col="cap_rate"        label="Cap%" />
+                    <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Verdict</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((d, i) => (
+                    <>
+                      <tr
+                        key={d.sale_id || i}
+                        className="border-t border-brand-line hover:bg-brand-gray/50 cursor-pointer"
+                        onClick={() => setExpanded(expanded === i ? null : i)}
+                      >
+                        <td className="px-3 py-2 font-bold text-brand-orange">{d.score ?? "—"}</td>
+                        <td className="px-3 py-2 text-brand-charcoal font-medium max-w-xs">
+                          {editingAddr === d ? (
+                            <input
+                              autoFocus
+                              value={addrDraft}
+                              onChange={e => setAddrDraft(e.target.value)}
+                              onBlur={() => commitAddr(d)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") commitAddr(d);
+                                if (e.key === "Escape") setEditingAddr(null);
+                              }}
+                              onClick={e => e.stopPropagation()}
+                              className="w-full text-sm font-medium border border-brand-orange rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-brand-orange"
+                            />
+                          ) : (
+                            <div className="flex items-start gap-1 group">
+                              <div className="min-w-0">
+                                <p className="leading-snug">{d.address}</p>
+                                {d.source === "spot_check" && (
+                                  <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide bg-indigo-100 text-indigo-700 border border-indigo-200">
+                                    SPOT
+                                  </span>
+                                )}
+                                {isLandOnly(d) && (
+                                  <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide bg-amber-100 text-amber-800 border border-amber-300">
+                                    LAND ONLY
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setEditingAddr(d);
+                                  setAddrDraft(d.address);
+                                }}
+                                title="Edit address"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 shrink-0 text-gray-400 hover:text-brand-orange text-xs leading-none"
+                              >
+                                ✎
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{d.municipality || "—"}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{fmt(d.min_bid)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap font-medium text-emerald-700">{fmt(d.max_bid_70)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap font-medium text-amber-600">{fmt(d.precise_mao)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{fmt(d.fmv)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{fmt(d.arv)}</td>
+                        <td className={`px-3 py-2 whitespace-nowrap font-medium ${d.flip_net_profit > 0 ? "text-verdict-buy" : "text-verdict-nobuy"}`}>{fmt(d.flip_net_profit)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{fmtP(d.cap_rate)}</td>
+                        <td className="px-3 py-2"><VerdictBadge verdict={d.verdict} rating={d.perfect_pass_rating} /></td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          {d.sale_id && (
+                            <button
+                              onClick={e => { e.stopPropagation(); toggleFavorite(d.sale_id); }}
+                              title={favorites.has(d.sale_id) ? "Remove from saved" : "Save property"}
+                              className={`mr-2 text-base transition-colors ${favorites.has(d.sale_id) ? "text-brand-orange" : "text-gray-300 hover:text-brand-orange"}`}
+                            >
+                              {favorites.has(d.sale_id) ? "★" : "☆"}
+                            </button>
+                          )}
+                          <span className="text-gray-400">{expanded === i ? "▲" : "▼"}</span>
+                        </td>
+                      </tr>
+                      {expanded === i && (
+                        <tr key={`exp-${i}`} className="border-t border-brand-line bg-brand-gray/30">
+                          <td colSpan={12} className="p-4">
+                            <PropertyCard deal={d} rank={i + 1} onShare={setShareTarget} />
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shareTarget && (
+        <ShareModal deal={shareTarget} onClose={() => setShareTarget(null)} />
+      )}
+      {shareFavoritesOpen && (
+        <ShareFavoritesModal
+          deals={deals.filter(d => favorites.has(d.sale_id))}
+          onClose={() => setShareFavoritesOpen(false)}
+        />
       )}
     </div>
   );
