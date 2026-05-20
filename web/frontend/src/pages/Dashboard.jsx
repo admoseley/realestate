@@ -7,6 +7,22 @@ import ShareFavoritesModal from "../components/ShareFavoritesModal";
 
 const VERDICTS = ["BUY", "CONSIDER", "WATCH", "NO BUY"];
 
+const ThumbUp = ({ active }) => (
+  <svg viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z" />
+    <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+  </svg>
+);
+
+const ThumbDown = ({ active }) => (
+  <svg viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+    <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z" />
+    <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" />
+  </svg>
+);
+
 export default function Dashboard() {
   const [deals,       setDeals]       = useState([]);
   const [loading,     setLoading]     = useState(true);
@@ -24,6 +40,12 @@ export default function Dashboard() {
   const [favorites, setFavorites] = useState(() => {
     try {
       const raw = localStorage.getItem("ewp_favorites");
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
+  const [thumbsdown, setThumbsdown] = useState(() => {
+    try {
+      const raw = localStorage.getItem("ewp_thumbsdown");
       return raw ? new Set(JSON.parse(raw)) : new Set();
     } catch { return new Set(); }
   });
@@ -49,13 +71,30 @@ export default function Dashboard() {
     localStorage.setItem("ewp_favorites", JSON.stringify([...favorites]));
   }, [favorites]);
 
-  const toggleFavorite = (saleId) => {
+  useEffect(() => {
+    localStorage.setItem("ewp_thumbsdown", JSON.stringify([...thumbsdown]));
+  }, [thumbsdown]);
+
+  const toggleThumbsUp = (saleId) => {
     if (!saleId) return;
     setFavorites(prev => {
       const next = new Set(prev);
       next.has(saleId) ? next.delete(saleId) : next.add(saleId);
       return next;
     });
+    // Mutually exclusive — clear any thumbs-down on this property
+    setThumbsdown(prev => { const next = new Set(prev); next.delete(saleId); return next; });
+  };
+
+  const toggleThumbsDown = (saleId) => {
+    if (!saleId) return;
+    setThumbsdown(prev => {
+      const next = new Set(prev);
+      next.has(saleId) ? next.delete(saleId) : next.add(saleId);
+      return next;
+    });
+    // Mutually exclusive — clear any thumbs-up on this property
+    setFavorites(prev => { const next = new Set(prev); next.delete(saleId); return next; });
   };
 
   const commitAddr = async (d) => {
@@ -74,6 +113,7 @@ export default function Dashboard() {
     await clearDeals();
     setDeals([]);
     setFavorites(new Set());
+    setThumbsdown(new Set());
     setShowClearConfirm(false);
     setExpanded(null);
     clearFilters();
@@ -217,9 +257,9 @@ export default function Dashboard() {
               <>
                 <button
                   onClick={() => setFilter("FAVORITES")}
-                  className={`px-3 py-1 rounded-full text-sm font-bold border transition-colors ${filter === "FAVORITES" ? "bg-brand-charcoal border-brand-charcoal text-white" : "bg-white border-brand-charcoal text-brand-charcoal hover:bg-brand-charcoal hover:text-white"}`}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold border transition-colors ${filter === "FAVORITES" ? "bg-brand-charcoal border-brand-charcoal text-white" : "bg-white border-brand-charcoal text-brand-charcoal hover:bg-brand-charcoal hover:text-white"}`}
                 >
-                  ★ {favorites.size} Saved
+                  <ThumbUp active={true} /> {favorites.size} Saved
                 </button>
                 <button
                   onClick={() => setShareFavoritesOpen(true)}
@@ -250,7 +290,9 @@ export default function Dashboard() {
                 {["ALL", ...VERDICTS_WITH_FAVORITES].map(v => (
                   <button key={v} onClick={() => setFilter(v)}
                     className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors ${filter === v ? "bg-brand-orange border-brand-orange text-white" : "border-brand-line text-gray-600 hover:border-brand-orange"}`}>
-                    {v === "FAVORITES" ? `★ SAVED${favorites.size > 0 ? ` (${favorites.size})` : ""}` : v}
+                    {v === "FAVORITES"
+                      ? <span className="flex items-center gap-1"><ThumbUp active={favorites.size > 0} /> SAVED{favorites.size > 0 ? ` (${favorites.size})` : ""}</span>
+                      : v}
                   </button>
                 ))}
               </div>
@@ -426,7 +468,7 @@ export default function Dashboard() {
                     <>
                       <tr
                         key={d.sale_id || i}
-                        className="border-t border-brand-line hover:bg-brand-gray/50 cursor-pointer"
+                        className={`border-t border-brand-line hover:bg-brand-gray/50 cursor-pointer transition-opacity ${thumbsdown.has(d.sale_id) ? "opacity-40 hover:opacity-80" : ""}`}
                         onClick={() => setExpanded(expanded === i ? null : i)}
                       >
                         <td className="px-3 py-2 font-bold text-brand-orange">{d.score ?? "—"}</td>
@@ -484,13 +526,22 @@ export default function Dashboard() {
                         <td className="px-3 py-2"><VerdictBadge verdict={d.verdict} rating={d.perfect_pass_rating} /></td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">
                           {d.sale_id && (
-                            <button
-                              onClick={e => { e.stopPropagation(); toggleFavorite(d.sale_id); }}
-                              title={favorites.has(d.sale_id) ? "Remove from saved" : "Save property"}
-                              className={`mr-2 text-base transition-colors ${favorites.has(d.sale_id) ? "text-brand-orange" : "text-gray-300 hover:text-brand-orange"}`}
-                            >
-                              {favorites.has(d.sale_id) ? "★" : "☆"}
-                            </button>
+                            <span className="inline-flex items-center gap-1 mr-1">
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleThumbsUp(d.sale_id); }}
+                                title={favorites.has(d.sale_id) ? "Remove from saved" : "Save property"}
+                                className={`transition-colors ${favorites.has(d.sale_id) ? "text-brand-orange" : "text-gray-300 hover:text-brand-orange"}`}
+                              >
+                                <ThumbUp active={favorites.has(d.sale_id)} />
+                              </button>
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleThumbsDown(d.sale_id); }}
+                                title={thumbsdown.has(d.sale_id) ? "Remove flag" : "Flag as not interested"}
+                                className={`transition-colors ${thumbsdown.has(d.sale_id) ? "text-slate-500" : "text-gray-300 hover:text-slate-400"}`}
+                              >
+                                <ThumbDown active={thumbsdown.has(d.sale_id)} />
+                              </button>
+                            </span>
                           )}
                           <span className="text-gray-400">{expanded === i ? "▲" : "▼"}</span>
                         </td>
