@@ -7,6 +7,15 @@ import ShareFavoritesModal from "../components/ShareFavoritesModal";
 
 const VERDICTS = ["BUY", "CONSIDER", "WATCH", "NO BUY"];
 
+const Th = ({ col, label, sortCol, sortAsc, onSort }) => (
+  <th
+    className="px-3 py-2 text-left text-xs text-gray-500 font-medium cursor-pointer hover:text-brand-charcoal whitespace-nowrap"
+    onClick={() => onSort(col)}
+  >
+    {label} {sortCol === col ? (sortAsc ? "↑" : "↓") : ""}
+  </th>
+);
+
 const ThumbUp = ({ active }) => (
   <svg viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -60,7 +69,6 @@ export default function Dashboard() {
   const [muniFilter, setMuniFilter] = useState(new Set());
 
   useEffect(() => {
-    setLoading(true);
     listDeals(0, 500)
       .then(data => setDeals(data))
       .catch(() => {})
@@ -169,15 +177,6 @@ export default function Dashboard() {
   ].filter(Boolean).length;
 
   const VERDICTS_WITH_FAVORITES = [...VERDICTS, "FAVORITES"];
-
-  const Th = ({ col, label }) => (
-    <th
-      className="px-3 py-2 text-left text-xs text-gray-500 font-medium cursor-pointer hover:text-brand-charcoal whitespace-nowrap"
-      onClick={() => sort(col)}
-    >
-      {label} {sortCol === col ? (sortAsc ? "↑" : "↓") : ""}
-    </th>
-  );
 
   const fmt  = (v) => v != null ? `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—";
   const fmtP = (v) => v != null ? `${Number(v).toFixed(1)}%` : "—";
@@ -449,16 +448,16 @@ export default function Dashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-brand-gray border-b border-brand-line">
                   <tr>
-                    <Th col="score"           label="Score" />
+                    <Th col="score"           label="Score"      sortCol={sortCol} sortAsc={sortAsc} onSort={sort} />
                     <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Address</th>
-                    <Th col="municipality"    label="Muni" />
-                    <Th col="min_bid"         label="Min Bid" />
-                    <Th col="max_bid_70"      label="Sweet Spot" />
-                    <Th col="precise_mao"     label="Max Bid" />
-                    <Th col="fmv"             label="FMV" />
-                    <Th col="arv"             label="ARV" />
-                    <Th col="flip_net_profit" label="Flip $" />
-                    <Th col="cap_rate"        label="Cap%" />
+                    <Th col="municipality"    label="Muni"       sortCol={sortCol} sortAsc={sortAsc} onSort={sort} />
+                    <Th col="min_bid"         label="Min Bid"    sortCol={sortCol} sortAsc={sortAsc} onSort={sort} />
+                    <Th col="max_bid_70"      label="Sweet Spot" sortCol={sortCol} sortAsc={sortAsc} onSort={sort} />
+                    <Th col="precise_mao"     label="Max Bid"    sortCol={sortCol} sortAsc={sortAsc} onSort={sort} />
+                    <Th col="fmv"             label="FMV"        sortCol={sortCol} sortAsc={sortAsc} onSort={sort} />
+                    <Th col="arv"             label="ARV"        sortCol={sortCol} sortAsc={sortAsc} onSort={sort} />
+                    <Th col="flip_net_profit" label="Flip $"     sortCol={sortCol} sortAsc={sortAsc} onSort={sort} />
+                    <Th col="cap_rate"        label="Cap%"       sortCol={sortCol} sortAsc={sortAsc} onSort={sort} />
                     <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Verdict</th>
                     <th className="px-3 py-2" />
                   </tr>

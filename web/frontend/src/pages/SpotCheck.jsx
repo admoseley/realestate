@@ -3,6 +3,19 @@ import { useNavigate } from "react-router-dom";
 import { runSpotCheck, pdfUrl } from "../api/client";
 import PropertyCard from "../components/PropertyCard";
 
+const Field = ({ label, type = "text", placeholder = "", value, onChange }) => (
+  <div>
+    <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+    <input
+      type={type}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      className="w-full border border-brand-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange"
+    />
+  </div>
+);
+
 export default function SpotCheck() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -58,19 +71,6 @@ export default function SpotCheck() {
     }
   };
 
-  const Field = ({ label, name, type = "text", placeholder = "" }) => (
-    <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-      <input
-        type={type}
-        value={form[name]}
-        onChange={set(name)}
-        placeholder={placeholder}
-        className="w-full border border-brand-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange"
-      />
-    </div>
-  );
-
   return (
     <div className="space-y-6">
       <div>
@@ -125,14 +125,14 @@ export default function SpotCheck() {
 
         {showAdvanced && (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-t border-brand-line pt-4">
-            <Field label="FMV Override ($)"   name="fmv"          type="number" />
-            <Field label="Sqft"               name="sqft"         type="number" />
-            <Field label="Year Built"         name="year"         type="number" />
-            <Field label="Bedrooms"           name="beds"         type="number" />
-            <Field label="Bathrooms"          name="baths"        type="number" />
-            <Field label="Parcel ID"          name="parcel"       />
+            <Field label="FMV Override ($)"   type="number" value={form.fmv}          onChange={set("fmv")} />
+            <Field label="Sqft"               type="number" value={form.sqft}         onChange={set("sqft")} />
+            <Field label="Year Built"         type="number" value={form.year}         onChange={set("year")} />
+            <Field label="Bedrooms"           type="number" value={form.beds}         onChange={set("beds")} />
+            <Field label="Bathrooms"          type="number" value={form.baths}        onChange={set("baths")} />
+            <Field label="Parcel ID"                        value={form.parcel}       onChange={set("parcel")} />
             <div className="col-span-2 md:col-span-3">
-              <Field label="Municipality"     name="municipality" />
+              <Field label="Municipality"                   value={form.municipality} onChange={set("municipality")} />
             </div>
           </div>
         )}

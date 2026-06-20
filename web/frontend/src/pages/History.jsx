@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { listReports, getReport, deleteReport, pdfUrl } from "../api/client";
 import PropertyCard from "../components/PropertyCard";
-import VerdictBadge from "../components/VerdictBadge";
 
 const PAGE_SIZE = 10;
 
@@ -10,10 +9,9 @@ export default function History() {
   const [page,     setPage]     = useState(0);
   const [expanded, setExpanded] = useState(null);
   const [detail,   setDetail]   = useState({});
-  const [loading,  setLoading]  = useState(false);
+  const [loading,  setLoading]  = useState(true);
 
   const load = useCallback(() => {
-    setLoading(true);
     listReports(page * PAGE_SIZE, PAGE_SIZE)
       .then(setReports)
       .finally(() => setLoading(false));
@@ -128,12 +126,12 @@ export default function History() {
 
           {/* Pagination */}
           <div className="px-4 py-3 border-t border-brand-line flex items-center justify-between">
-            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+            <button onClick={() => { setLoading(true); setPage(p => Math.max(0, p - 1)); }} disabled={page === 0}
               className="text-sm text-brand-orange font-semibold disabled:opacity-30 hover:underline">
               ← Prev
             </button>
             <span className="text-xs text-gray-500">Page {page + 1}</span>
-            <button onClick={() => setPage(p => p + 1)} disabled={reports.length < PAGE_SIZE}
+            <button onClick={() => { setLoading(true); setPage(p => p + 1); }} disabled={reports.length < PAGE_SIZE}
               className="text-sm text-brand-orange font-semibold disabled:opacity-30 hover:underline">
               Next →
             </button>

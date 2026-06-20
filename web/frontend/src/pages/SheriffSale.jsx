@@ -3,6 +3,26 @@ import { useNavigate } from "react-router-dom";
 import { sheriffSaleUpload, pollJob, getReport, pdfUrl, debugAnalyzePdf } from "../api/client";
 import ProgressStepper from "../components/ProgressStepper";
 
+const DebugButton = ({ debugging, setDebugging }) => (
+  <label className={`inline-flex items-center gap-2 text-xs font-semibold cursor-pointer px-3 py-2 rounded-lg border transition-colors ${
+    debugging ? "border-gray-300 text-gray-400 cursor-default" : "border-brand-line text-gray-500 hover:border-brand-orange hover:text-brand-orange"
+  }`}>
+    {debugging ? "⏳ Generating debug report…" : "⬇ Download Debug Report"}
+    <input
+      type="file" accept=".pdf" className="hidden"
+      disabled={debugging}
+      onChange={async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        setDebugging(true);
+        try { await debugAnalyzePdf(f); }
+        catch (err) { alert("Debug failed: " + (err.message || "Unknown error")); }
+        finally { setDebugging(false); e.target.value = ""; }
+      }}
+    />
+  </label>
+);
+
 export default function SheriffSale() {
   const navigate = useNavigate();
   const [file,      setFile]      = useState(null);
@@ -37,7 +57,7 @@ export default function SheriffSale() {
       } else if (j.status === "error") {
         clearInterval(pollRef.current);
       }
-    } catch {}
+    } catch { /* poll error — transient, ignore */ }
   };
 
   useEffect(() => () => clearInterval(pollRef.current), []);
@@ -49,26 +69,6 @@ export default function SheriffSale() {
     setReport(null);
     setFile(null);
   };
-
-  const DebugButton = () => (
-    <label className={`inline-flex items-center gap-2 text-xs font-semibold cursor-pointer px-3 py-2 rounded-lg border transition-colors ${
-      debugging ? "border-gray-300 text-gray-400 cursor-default" : "border-brand-line text-gray-500 hover:border-brand-orange hover:text-brand-orange"
-    }`}>
-      {debugging ? "⏳ Generating debug report…" : "⬇ Download Debug Report"}
-      <input
-        type="file" accept=".pdf" className="hidden"
-        disabled={debugging}
-        onChange={async (e) => {
-          const f = e.target.files[0];
-          if (!f) return;
-          setDebugging(true);
-          try { await debugAnalyzePdf(f); }
-          catch (err) { alert("Debug failed: " + (err.message || "Unknown error")); }
-          finally { setDebugging(false); e.target.value = ""; }
-        }}
-      />
-    </label>
-  );
 
   return (
     <div className="space-y-6">
@@ -169,7 +169,7 @@ export default function SheriffSale() {
           {job.status === "error" && (
             <div className="pt-2 border-t border-brand-line flex items-center gap-3">
               <span className="text-xs text-gray-500">Upload the same PDF to get a detailed diagnostic:</span>
-              <DebugButton />
+              <DebugButton debugging={debugging} setDebugging={setDebugging} />
             </div>
           )}
         </div>
