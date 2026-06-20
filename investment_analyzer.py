@@ -278,7 +278,8 @@ class Deal:
     stories:      float = 1.5
     condition:    str   = "Average"
     style:        str   = ""
-    postponed:    bool  = False
+    postponed:      bool  = False
+    free_and_clear: bool  = False
 
     # ── Flip outputs ──────────────────────────────────────────────────────────
     repair_cost:         float = 0.0

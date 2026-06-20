@@ -28,7 +28,7 @@ SHERIFF_TXT_CACHE = Path("/tmp/sheriff_sale_web.txt")
 
 
 def _run_pipeline(job_id: str, pdf_path: str,
-                  enrich: bool, fc_only: bool, db_factory, cleanup_path: str = None):
+                  enrich: bool, db_factory, cleanup_path: str = None):
     db: Session = next(db_factory())
     try:
         update_job(job_id, "running", 5, "Fetching sheriff sale PDF…")
@@ -43,27 +43,23 @@ def _run_pipeline(job_id: str, pdf_path: str,
         # Step 3 — parse
         update_job(job_id, "running", 25, "Parsing property records…")
         properties = parse_sheriff_text(txt_path)
-        fc_props   = [p for p in properties if p.free_and_clear] if fc_only else properties
-        label      = "Free & Clear" if fc_only else "total"
 
-        if not fc_props:
-            msg = ("No Free & Clear properties found in this PDF." if fc_only
-                   else "No properties found in this PDF.")
-            fail_job(job_id, msg)
+        if not properties:
+            fail_job(job_id, "No properties found in this PDF.")
             return
 
         # Step 4 — enrich
         if enrich:
-            for i, prop in enumerate(fc_props):
-                pct = 25 + int((i / len(fc_props)) * 30)
+            for i, prop in enumerate(properties):
+                pct = 25 + int((i / len(properties)) * 30)
                 update_job(job_id, "running", pct,
-                           f"Enriching property {i+1} of {len(fc_props)} ({label}): {prop.address[:40]}…")
+                           f"Enriching property {i+1} of {len(properties)}: {prop.address[:40]}…")
                 enrich_property(prop)
 
         # Step 5 — build Deal objects + analyze
         update_job(job_id, "running", 60, "Running investment analysis…")
         deals = []
-        for prop in fc_props:
+        for prop in properties:
             fmv = prop.fair_market or prop.assessed_value
             if not fmv:
                 # Enrichment found nothing — use min_bid as conservative FMV estimate
@@ -71,19 +67,20 @@ def _run_pipeline(job_id: str, pdf_path: str,
             if not fmv:
                 continue
             d = Deal(
-                sale_id      = prop.sale_id,
-                case         = prop.case_number,
-                address      = prop.address,
-                municipality = prop.municipality,
-                parcel       = prop.parcel_id,
-                min_bid      = prop.min_bid or prop.tax_bid,
-                tax_bid      = prop.tax_bid,
-                fmv          = float(fmv),
-                assessed     = float(prop.assessed_value or fmv),
-                year_built   = int(prop.year_built or 1950),
-                sqft         = int(prop.sqft or 1000),
-                bedrooms     = int(prop.bedrooms or 3),
-                postponed    = not prop.active,
+                sale_id        = prop.sale_id,
+                case           = prop.case_number,
+                address        = prop.address,
+                municipality   = prop.municipality,
+                parcel         = prop.parcel_id,
+                min_bid        = prop.min_bid or prop.tax_bid,
+                tax_bid        = prop.tax_bid,
+                fmv            = float(fmv),
+                assessed       = float(prop.assessed_value or fmv),
+                year_built     = int(prop.year_built or 1950),
+                sqft           = int(prop.sqft or 1000),
+                bedrooms       = int(prop.bedrooms or 3),
+                postponed      = not prop.active,
+                free_and_clear = prop.free_and_clear,
             )
             analyzed = analyze(d)
             if prop.land_only:
@@ -98,7 +95,7 @@ def _run_pipeline(job_id: str, pdf_path: str,
         report = Report(
             type           = "sheriff_sale",
             created_at     = datetime.utcnow(),
-            title          = f"Sheriff Sale {'(F&C Only)' if fc_only else '(All Properties)'} — {datetime.utcnow().strftime('%B %d, %Y')}",
+            title          = f"Sheriff Sale (All Properties) — {datetime.utcnow().strftime('%B %d, %Y')}",
             property_count = len(deals),
             buy_count      = sum(1 for d in deals if d.verdict == "BUY"),
             consider_count = sum(1 for d in deals if d.verdict == "CONSIDER"),
@@ -173,9 +170,8 @@ def _run_pipeline(job_id: str, pdf_path: str,
 
 @router.post("/upload")
 async def analyze_from_upload(background_tasks: BackgroundTasks,
-                               enrich:  bool = Form(True),
-                               fc_only: bool = Form(True),
-                               file: UploadFile = File(...)):
+                               enrich: bool = Form(True),
+                               file:   UploadFile = File(...)):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Uploaded file must be a PDF.")
     tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
@@ -184,7 +180,7 @@ async def analyze_from_upload(background_tasks: BackgroundTasks,
     tmp.close()
     job_id = create_job()
     background_tasks.add_task(
-        _run_pipeline, job_id, tmp.name, enrich, fc_only, get_db,
+        _run_pipeline, job_id, tmp.name, enrich, get_db,
         cleanup_path=tmp.name,
     )
     return {"job_id": job_id}

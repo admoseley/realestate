@@ -66,6 +66,7 @@ export default function Dashboard() {
   const [fmvMax,     setFmvMax]     = useState("");
   const [minScore,   setMinScore]   = useState("");
   const [activeOnly, setActiveOnly] = useState(false);
+  const [fcFilter,   setFcFilter]   = useState(false);
   const [muniFilter, setMuniFilter] = useState(new Set());
 
   useEffect(() => {
@@ -134,6 +135,7 @@ export default function Dashboard() {
     setFmvMin(""); setFmvMax("");
     setMinScore("");
     setActiveOnly(false);
+    setFcFilter(false);
     setMuniFilter(new Set());
   };
 
@@ -154,6 +156,7 @@ export default function Dashboard() {
       if (filter !== "ALL" && filter !== "FAVORITES" && d.verdict !== filter) return false;
       if (hideLand && isLandOnly(d)) return false;
       if (activeOnly && isPostponed(d)) return false;
+      if (fcFilter && d.free_and_clear === false) return false;
       const bMin = parseMoney(bidMin), bMax = parseMoney(bidMax);
       if (bMin != null && (d.min_bid ?? 0) < bMin) return false;
       if (bMax != null && (d.min_bid ?? 0) > bMax) return false;
@@ -171,7 +174,7 @@ export default function Dashboard() {
     });
 
   const activeFilterCount = [
-    filter !== "ALL", hideLand, activeOnly,
+    filter !== "ALL", hideLand, activeOnly, fcFilter,
     !!bidMin, !!bidMax, !!fmvMin, !!fmvMax, !!minScore,
     muniFilter.size > 0,
   ].filter(Boolean).length;
@@ -394,6 +397,11 @@ export default function Dashboard() {
 
                   <div className="space-y-1.5">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Property Flags</p>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={fcFilter} onChange={e => setFcFilter(e.target.checked)}
+                        className="rounded border-brand-line accent-brand-orange" />
+                      <span className="text-xs text-gray-700">Free &amp; Clear only</span>
+                    </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)}
                         className="rounded border-brand-line accent-brand-orange" />
