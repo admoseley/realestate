@@ -15,7 +15,7 @@ env/
 # Generated outputs (not for version control)
 *.pdf
 web/backend/reports/
-web/backend/reports.db
+reports.db
 
 # Frontend
 node_modules/
