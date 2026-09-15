@@ -3,11 +3,11 @@ Debug endpoint — runs the sheriff sale pipeline with full verbose logging
 and returns a downloadable plain-text diagnostic report.
 """
 import io
-import sys
 import subprocess
+import sys
 import tempfile
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
@@ -19,14 +19,29 @@ from sheriff_sale_analyzer import parse_sheriff_text, enrich_property, fetch_wpr
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 
-SHERIFF_TXT_CACHE = Path("/tmp/sheriff_debug.txt")
-
 
 @router.post("/analyze-pdf", response_class=PlainTextResponse)
 async def debug_analyze_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Must upload a PDF file.")
 
+    content = await file.read()
+
+    # Each request works in its own directory, removed once the report is built
+    # (even on errors). A fixed /tmp filename used to let concurrent debug runs
+    # overwrite each other's extracted text.
+    with tempfile.TemporaryDirectory(prefix="sheriff-debug-") as workdir:
+        report = _build_report(file.filename, content, Path(workdir))
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return PlainTextResponse(
+        report,
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="sheriff_debug_{stamp}.txt"'},
+    )
+
+
+def _build_report(filename: str, content: bytes, workdir: Path) -> str:
     out = io.StringIO()
 
     def log(msg=""):
@@ -34,18 +49,16 @@ async def debug_analyze_pdf(file: UploadFile = File(...)):
 
     log("=" * 70)
     log("SHERIFF SALE DEBUG REPORT")
-    log(f"Generated : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    log(f"File      : {file.filename}")
+    log(f"Generated : {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    log(f"File      : {filename}")
     log("=" * 70)
 
-    # ── Save upload to temp file ──────────────────────────────────────────────
-    content = await file.read()
+    # ── Save upload into the working directory ────────────────────────────────
     log(f"\n[FILE] Size: {len(content):,} bytes ({len(content)/1024/1024:.2f} MB)")
 
-    tmp_pdf = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-    tmp_pdf.write(content)
-    tmp_pdf.close()
-    pdf_path = Path(tmp_pdf.name)
+    pdf_path = workdir / "upload.pdf"
+    pdf_path.write_bytes(content)
+    txt_file = workdir / "extracted.txt"
 
     # ── Step 1: pdftotext ─────────────────────────────────────────────────────
     log("\n" + "─" * 70)
@@ -55,18 +68,17 @@ async def debug_analyze_pdf(file: UploadFile = File(...)):
     txt_path = None
     raw_text = ""
     try:
-        SHERIFF_TXT_CACHE.unlink(missing_ok=True)
         result = subprocess.run(
-            ["pdftotext", "-layout", str(pdf_path), str(SHERIFF_TXT_CACHE)],
+            ["pdftotext", "-layout", str(pdf_path), str(txt_file)],
             capture_output=True, text=True, timeout=60
         )
         log(f"Exit code : {result.returncode}")
         if result.stderr:
             log(f"Stderr    : {result.stderr.strip()}")
 
-        if result.returncode == 0 and SHERIFF_TXT_CACHE.exists():
-            raw_text = SHERIFF_TXT_CACHE.read_text(errors="replace")
-            txt_path = SHERIFF_TXT_CACHE
+        if result.returncode == 0 and txt_file.exists():
+            raw_text = txt_file.read_text(errors="replace")
+            txt_path = txt_file
             log(f"Text size : {len(raw_text):,} chars")
             log("\n--- First 2000 characters of extracted text ---")
             log(raw_text[:2000])
@@ -82,8 +94,7 @@ async def debug_analyze_pdf(file: UploadFile = File(...)):
 
     if not txt_path:
         log("\nCannot continue — no text extracted from PDF.")
-        pdf_path.unlink(missing_ok=True)
-        return PlainTextResponse(out.getvalue(), media_type="text/plain")
+        return out.getvalue()
 
     # ── Step 2: parse_sheriff_text ────────────────────────────────────────────
     log("\n" + "─" * 70)
@@ -193,15 +204,8 @@ async def debug_analyze_pdf(file: UploadFile = File(...)):
   3. Try running a spot check manually on one of the addresses above to confirm.
 """)
 
-    # ── Cleanup ───────────────────────────────────────────────────────────────
-    pdf_path.unlink(missing_ok=True)
-
     log("\n" + "=" * 70)
     log("END OF DEBUG REPORT")
     log("=" * 70)
 
-    return PlainTextResponse(
-        out.getvalue(),
-        media_type="text/plain",
-        headers={"Content-Disposition": f'attachment; filename="sheriff_debug_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.txt"'},
-    )
+    return out.getvalue()

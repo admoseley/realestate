@@ -49,8 +49,34 @@ Configuration is read from the environment or `web/backend/.env` (git-ignored �
 | `RESEND_API_KEY` | Enables email sharing |
 | `FROM_EMAIL` / `FROM_NAME` | Sender identity for shared reports |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins (defaults to local Vite ports) |
-| `DB_PATH` | SQLite database file (default `reports.db`) |
+| `DB_PATH` | SQLite database file for local development (default `reports.db`) |
 | `REPORTS_DIR` | Where generated PDFs are written |
+| `AZURE_SQL_CONNECTION_STRING` | Use Azure SQL instead of SQLite. An ODBC connection string **without credentials** (no `UID`, `PWD`, or `Authentication`) — the app signs in with a Microsoft Entra token |
+| `AZURE_CLIENT_ID` | Client ID of the user-assigned managed identity used for Azure SQL. Leave unset locally to use your `az login` session |
+| `RUN_MIGRATIONS` | Apply database migrations at startup (default `true`) |
+
+### Database and migrations
+
+Locally the API uses SQLite. In Azure it uses Azure SQL Database (the serverless
+free offer) through Microsoft's ODBC Driver 18. That database auto-pauses when
+idle, so the API never pools connections, retries briefly while it resumes, and
+returns `503` with `Retry-After` if it isn't ready yet.
+
+Schema changes are managed with Alembic and applied automatically at startup:
+
+```bash
+cd web/backend
+alembic upgrade head                                  # apply migrations
+alembic revision --autogenerate -m "describe change"  # after editing models in database.py
+alembic check                                         # CI fails if models and migrations differ
+```
+
+A `reports.db` created before migrations existed will conflict — delete it
+(local SQLite never holds production data).
+
+Health endpoints: `GET /api/health` checks the process only and never touches
+the database; `GET /api/health/db` wakes the database and returns `503` while it
+resumes.
 
 ### Frontend
 

@@ -1,11 +1,11 @@
 import json
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from database import PropertyDeal, get_db
+from database import PropertyDeal, get_db, utcnow
 from models import UpdateAddressRequest, ClearDealsResult
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -22,6 +22,18 @@ def _to_record(row: PropertyDeal) -> dict:
     return deal
 
 
+def list_statement(source: Optional[str], skip: int, limit: int):
+    """Paged query for deal rows.
+
+    SQL Server rejects OFFSET/FETCH without an ORDER BY (SQLite doesn't care),
+    so paging is anchored to the primary key.
+    """
+    statement = select(PropertyDeal).order_by(PropertyDeal.id)
+    if source:
+        statement = statement.where(PropertyDeal.source == source)
+    return statement.offset(skip).limit(limit)
+
+
 @router.get("")
 def list_deals(
     skip:   int = 0,
@@ -29,11 +41,10 @@ def list_deals(
     source: Optional[str] = None,
     db:     Session = Depends(get_db),
 ):
-    q = db.query(PropertyDeal)
-    if source:
-        q = q.filter(PropertyDeal.source == source)
-    rows    = q.offset(skip).limit(limit).all()
+    rows    = db.scalars(list_statement(source, skip, limit)).all()
     records = [_to_record(r) for r in rows]
+    # The score lives inside deal_json, so ranking happens after loading. The
+    # default page size covers the whole deal list in normal use.
     records.sort(key=lambda d: d.get("score") or 0, reverse=True)
     return records
 
@@ -64,6 +75,6 @@ def update_deal_address(
     deal_data = json.loads(row.deal_json)
     deal_data["address"] = new_address
     row.deal_json  = json.dumps(deal_data, default=str)
-    row.updated_at = datetime.utcnow()
+    row.updated_at = utcnow()
     db.commit()
     return {"sale_id": sale_id, "address": new_address}
