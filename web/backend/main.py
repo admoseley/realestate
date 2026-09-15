@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -15,6 +14,13 @@ except ImportError:
 else:
     load_dotenv(Path(__file__).parent / ".env")
 
+# Telemetry is configured before FastAPI is imported: the instrumentation swaps
+# in an instrumented FastAPI class, and a class imported earlier would never
+# record requests (see observability.py). It comes after .env loading, so a
+# local .env can supply the connection string.
+import observability
+observability.configure()
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -25,7 +31,7 @@ from jobs import fail_orphaned_jobs, get_job
 from models import JobStatus
 from routers import sheriff_sale, spot_check, reports, debug, share, deals
 
-log = logging.getLogger(__name__)
+log = observability.get_logger(__name__)
 
 # How long startup waits for the database. Startup isn't subject to the
 # 45-second proxy limit, so it can outlast a full serverless resume.

@@ -1,4 +1,3 @@
-import logging
 import os
 import re
 import sys
@@ -21,8 +20,9 @@ from deal_utils import deal_records_by_sale_id
 from identity import current_user
 from jobs import JobError, complete_job, count_jobs_since, create_job, run_job, update_job
 from models import JobStarted, ShareRequest, SharePropertyRequest, ShareFavoritesRequest
+from observability import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/share", tags=["share"])
 

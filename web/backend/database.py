@@ -21,7 +21,6 @@ auto-pauses when idle. That drives three decisions in this module:
 """
 from __future__ import annotations
 
-import logging
 import os
 import re
 import struct
@@ -35,7 +34,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-log = logging.getLogger(__name__)
+from observability import get_logger
+
+log = get_logger(__name__)
 
 
 def utcnow() -> datetime:
