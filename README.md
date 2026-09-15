@@ -27,6 +27,7 @@ buy-and-hold analysis, and produces branded PDF reports that can be shared by em
 > **Hosting migration in progress.** The app currently runs on Netlify (frontend) and
 > Render (API). It is moving to Azure — Static Web Apps with Microsoft sign-in,
 > Container Apps, Azure SQL, and Blob Storage — tracked in issues #2–#10.
+> The Azure environment is defined in Terraform under [`infra/`](infra/README.md).
 
 ## Local development
 
@@ -189,6 +190,10 @@ cd web/frontend && npm run lint && npm run build
 - **Frontend** — eslint + production build
 - **Docker** — builds the API image and boots it to confirm it serves requests
 - **Secrets** — gitleaks scans the full git history
+
+`.github/workflows/terraform-ci.yml` runs on changes under `infra/`:
+`terraform fmt`, `validate`, `tflint`, and Checkov. It checks code only and
+never contacts Azure.
 
 ## Contributing
 
