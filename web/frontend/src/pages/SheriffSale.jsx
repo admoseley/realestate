@@ -5,6 +5,11 @@ import {
 } from "../api/client";
 import ProgressStepper from "../components/ProgressStepper";
 
+// Mirrors the API's upload limit (web/backend/uploads.py). Checking here too
+// gives a clear message before uploading; Static Web Apps rejects anything
+// over 30 MB before it even reaches the API.
+const MAX_UPLOAD_MB = 25;
+
 const DebugButton = ({ debugging, setDebugging }) => (
   <label className={`inline-flex items-center gap-2 text-xs font-semibold cursor-pointer px-3 py-2 rounded-lg border transition-colors ${
     debugging ? "border-gray-300 text-gray-400 cursor-default" : "border-brand-line text-gray-500 hover:border-brand-orange hover:text-brand-orange"
@@ -18,7 +23,12 @@ const DebugButton = ({ debugging, setDebugging }) => (
         if (!f) return;
         setDebugging(true);
         try { await debugAnalyzePdf(f); }
-        catch (err) { alert("Debug failed: " + (err.message || "Unknown error")); }
+        catch (err) {
+          // The API hides the debug report (404) unless ENABLE_DEBUG=true.
+          alert(err.response?.status === 404
+            ? "Debug reports are turned off on this server. Set ENABLE_DEBUG=true on the API to use them."
+            : "Debug failed: " + (err.message || "Unknown error"));
+        }
         finally { setDebugging(false); e.target.value = ""; }
       }}
     />
@@ -33,6 +43,7 @@ export default function SheriffSale() {
   const [step,   setStep]   = useState("idle"); // idle | processing | results
   const [job,    setJob]    = useState(null);
   const [report, setReport] = useState(null);
+  const tooLarge = file && file.size > MAX_UPLOAD_MB * 1024 * 1024;
   // Aborts the current run's polling on reset or unmount.
   const abortRef = useRef(null);
 
@@ -112,6 +123,11 @@ export default function SheriffSale() {
                 </div>
               )}
             </div>
+            {tooLarge && (
+              <p className="text-xs text-red-600">
+                This PDF is {(file.size / 1024 / 1024).toFixed(1)} MB. The upload limit is {MAX_UPLOAD_MB} MB.
+              </p>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -131,7 +147,7 @@ export default function SheriffSale() {
 
           <button
             onClick={startAnalysis}
-            disabled={!file}
+            disabled={!file || tooLarge}
             className="bg-brand-orange text-white font-bold px-8 py-3 rounded-xl disabled:opacity-40 hover:bg-brand-dark transition-colors"
           >
             Start Analysis
