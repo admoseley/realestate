@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (git-ignored) and fill in. Only alert_email is required.
+
+alert_email = "you@example.com"
+
+# Second apply, once the GoDaddy CNAME from the dns_record output exists:
+# enable_custom_domain = true
