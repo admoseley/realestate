@@ -46,6 +46,11 @@ resource "azurerm_storage_account" "reports" {
   }
 
   tags = local.tags
+
+  lifecycle {
+    # Holds every report PDF.
+    prevent_destroy = true
+  }
 }
 
 # Created through Azure Resource Manager (storage_account_id rather than an
@@ -55,6 +60,10 @@ resource "azurerm_storage_container" "reports" {
   name                  = "reports"
   storage_account_id    = azurerm_storage_account.reports.id
   container_access_type = "private"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Log every read, write, and delete of report PDFs, alongside the SQL and Key

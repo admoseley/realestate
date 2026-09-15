@@ -27,6 +27,12 @@ resource "azurerm_key_vault" "main" {
   }
 
   tags = local.tags
+
+  lifecycle {
+    # Holds the Resend key. A plan that would delete or replace the vault fails
+    # until this is removed on purpose.
+    prevent_destroy = true
+  }
 }
 
 resource "azurerm_key_vault_secret" "resend_api_key" {
@@ -39,6 +45,8 @@ resource "azurerm_key_vault_secret" "resend_api_key" {
   lifecycle {
     # The owner replaces the placeholder with the real key; don't revert it.
     ignore_changes = [value]
+    # Deleting the secret would break the Container App's Key Vault reference.
+    prevent_destroy = true
   }
 
   depends_on = [time_sleep.rbac_propagation]

@@ -133,8 +133,16 @@ See the deploy pipeline (#8) and the sign-in configuration (#9).
   project in the subscription.
 - **Free-offer region.** The first free-offer database in a subscription fixes
   the region for every later one, which is Central US here.
-- **Key Vault purge protection.** After a `terraform destroy` the vault stays
-  soft-deleted, and its name reserved, for 7 days.
+- **Data is protected from accidental deletion.** These resources carry
+  `lifecycle { prevent_destroy = true }`:
+  - the SQL server and database
+  - the storage account and `reports` container
+  - the Key Vault and its secret
+
+  Any plan that would delete or replace them fails, including
+  `terraform destroy`, until the setting is removed on purpose. After the
+  Key Vault is deleted, purge protection keeps it soft-deleted, with its
+  name reserved, for 7 days.
 
 ## CI
 

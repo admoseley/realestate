@@ -35,6 +35,11 @@ resource "azurerm_mssql_server" "main" {
   }
 
   tags = local.tags
+
+  lifecycle {
+    # Deleting the server deletes the database with it.
+    prevent_destroy = true
+  }
 }
 
 # "Allow Azure services": the 0.0.0.0 rule admits connections that originate
@@ -96,5 +101,11 @@ resource "azapi_resource" "sql_database" {
       # UTF-8 collation, so VARCHAR columns store any Unicode text.
       collation = "LATIN1_GENERAL_100_CI_AS_SC_UTF8"
     }
+  }
+
+  lifecycle {
+    # This is where the reports, deals, and jobs live. tflint's prevent_destroy
+    # rule only inspects azurerm resources, so this is set by hand.
+    prevent_destroy = true
   }
 }
