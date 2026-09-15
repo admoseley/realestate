@@ -58,12 +58,6 @@ class ReportDetail(ReportSummary):
     deals: list[dict]     # list of analyzed Deal dicts
 
 
-class SpotCheckResponse(BaseModel):
-    report_id: int
-    deal:      dict
-    warning:   Optional[str] = None
-
-
 class UpdateAddressRequest(BaseModel):
     address: str
 

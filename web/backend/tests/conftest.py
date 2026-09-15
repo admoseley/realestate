@@ -28,6 +28,20 @@ def migrated_db():
     run_migrations()
 
 
+@pytest.fixture
+def fake_pdf(monkeypatch):
+    """Stub out report rendering in the spot-check and share routers.
+
+    Real rendering downloads OpenStreetMap tiles for the maps; these tests only
+    need a PDF file to exist where the router expects one.
+    """
+    def build(_deals, path, **_options):
+        Path(path).write_bytes(b"%PDF-1.4 test report")
+
+    for module in ("routers.spot_check", "routers.share"):
+        monkeypatch.setattr(f"{module}.build_and_save_pdf", build)
+
+
 @pytest.fixture(scope="session")
 def client(migrated_db):
     from fastapi.testclient import TestClient
