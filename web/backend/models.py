@@ -20,12 +20,21 @@ class SpotCheckRequest(BaseModel):
 
 # ── Responses ─────────────────────────────────────────────────────────────────
 
+class JobStarted(BaseModel):
+    """Returned by endpoints whose work runs in the background: poll
+    ``GET /api/jobs/{job_id}`` until ``status`` is ``done`` or ``error``."""
+    job_id: str
+
+
 class JobStatus(BaseModel):
     job_id:    str
     status:    str        # pending | running | done | error
     percent:   int
     message:   str
     report_id: Optional[int] = None
+    # Set when a job is done. Spot check: {"deal": {...}, "warning": str | null}.
+    # Share: {"recipient": str, "count": int}. Sheriff sale: none (see report_id).
+    result:    Optional[dict] = None
 
 
 class ReportSummary(BaseModel):

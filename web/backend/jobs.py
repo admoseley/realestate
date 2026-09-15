@@ -10,11 +10,15 @@ would stop the serverless database from auto-pausing.
 """
 from __future__ import annotations
 
+import json
+import logging
 import time
 import uuid
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from database import Job, SessionLocal, utcnow
+
+log = logging.getLogger(__name__)
 
 # Progress arrives about once per enriched property. Writing every update would
 # mean a database round trip each time, so interim "running" updates are
@@ -77,11 +81,45 @@ def get_job(job_id: str) -> Optional[dict]:
             "percent":   job.percent,
             "message":   job.message,
             "report_id": job.report_id,
+            "result":    json.loads(job.result_json) if job.result_json else None,
         }
+
+
+def complete_job(job_id: str, message: str, report_id: Optional[int] = None,
+                 result: Optional[dict] = None):
+    """Mark a job done, with whatever the client needs to show the outcome.
+
+    ``result`` is what the old synchronous endpoints returned in their response
+    body; clients now read it from the job once polling sees ``done``.
+    """
+    result_json = json.dumps(result, default=str) if result is not None else None
+    update_job(job_id, "done", 100, message, report_id=report_id, result_json=result_json)
 
 
 def fail_job(job_id: str, error: str):
     update_job(job_id, "error", 0, error)
+
+
+class JobError(Exception):
+    """An expected failure, such as a rejected recipient address. Its message is
+    shown to the user as-is, and no traceback is logged."""
+
+
+def run_job(job_id: str, failure_message: str, work: Callable[..., Any], *args: Any) -> None:
+    """Run ``work(job_id, *args)`` as a background task and record any failure.
+
+    Nothing propagates. The HTTP response went out before the task started, so
+    re-raising would only add a generic "Exception in ASGI application" log line.
+    Unexpected errors are logged here with their traceback instead, and the
+    job's message tells the polling client what happened.
+    """
+    try:
+        work(job_id, *args)
+    except JobError as exc:
+        fail_job(job_id, str(exc))
+    except Exception as exc:
+        log.exception("Job %s failed", job_id)
+        fail_job(job_id, f"{failure_message}: {exc}")
 
 
 def fail_orphaned_jobs() -> int:
