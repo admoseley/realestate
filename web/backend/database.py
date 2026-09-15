@@ -104,12 +104,10 @@ def _azure_sql_engine(odbc_connection_string: str) -> Engine:
     # Imported lazily so local development and CI (SQLite) don't need the
     # Microsoft ODBC driver installed.
     import pyodbc
-    from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
 
-    # In Azure, AZURE_CLIENT_ID selects the container's user-assigned managed
-    # identity. Locally, DefaultAzureCredential falls back to `az login`.
-    client_id = os.getenv("AZURE_CLIENT_ID")
-    credential = ManagedIdentityCredential(client_id=client_id) if client_id else DefaultAzureCredential()
+    from azure_auth import get_credential
+
+    credential = get_credential()
 
     def connect():
         # The token is passed as a connection attribute rather than using the
