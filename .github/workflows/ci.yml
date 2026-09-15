@@ -1,0 +1,108 @@
+# Continuous integration for every pull request and push to main.
+#
+# Four independent jobs so a failure points straight at the layer that broke:
+#   backend  — ruff lint + pytest on Python 3.11 (the version the API image runs)
+#   frontend — eslint + production Vite build
+#   docker   — the API image still builds and the app actually boots
+#   secrets  — gitleaks over the FULL git history (a secret removed in a later
+#              commit is still leaked, so scanning only the diff isn't enough)
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (ruff + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            web/backend/requirements.txt
+            web/backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r web/backend/requirements.txt -r web/backend/requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest
+        working-directory: web/backend
+        run: pytest
+
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  docker:
+    name: Docker build + boot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -t realestate-api:ci .
+
+      # A successful build doesn't prove the app starts (e.g. a missing system
+      # library or import error only shows up at runtime), so boot it and wait
+      # for the OpenAPI document to be served.
+      - name: Boot and smoke-test
+        run: |
+          docker run -d --name api -p 8000:8000 realestate-api:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/openapi.json > /dev/null; then
+              echo "API is up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not become ready"; docker logs api; exit 1
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history
+
+      # The gitleaks GitHub Action needs a paid license for private repos, so
+      # install the open-source CLI directly — it works on any plan.
+      - name: Install gitleaks CLI
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+
+      - name: Scan full history
+        run: gitleaks detect --source . --no-banner --redact --verbose
