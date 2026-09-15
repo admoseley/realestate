@@ -3,6 +3,7 @@ import json
 import re
 from typing import Optional
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -16,6 +17,25 @@ def _fingerprint(address: str, min_bid, municipality: Optional[str]) -> str:
 
 def pdf_hash(pdf_bytes: bytes) -> str:
     return hashlib.sha256(pdf_bytes).hexdigest()
+
+
+def deal_record(row: PropertyDeal) -> dict:
+    """A stored deal as the API presents it: the analysis plus row metadata."""
+    deal = json.loads(row.deal_json)
+    deal["address"]      = row.address   # always use the (possibly patched) column value
+    deal["sale_id"]      = row.sale_id
+    deal["source"]       = row.source
+    deal["municipality"] = row.municipality
+    deal["created_at"]   = row.created_at.isoformat() if row.created_at else None
+    deal["updated_at"]   = row.updated_at.isoformat() if row.updated_at else None
+    return deal
+
+
+def deal_records_by_sale_id(db: Session, sale_ids: list[str]) -> dict[str, dict]:
+    """Deal records for the given sale IDs, keyed by sale ID. Unknown IDs are
+    simply absent, so callers can report exactly which ones are missing."""
+    rows = db.scalars(select(PropertyDeal).where(PropertyDeal.sale_id.in_(sale_ids))).all()
+    return {row.sale_id: deal_record(row) for row in rows}
 
 
 def spot_sale_id(address: str, price: float) -> str:

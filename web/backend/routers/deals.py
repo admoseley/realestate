@@ -6,20 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database import PropertyDeal, get_db, utcnow
+from deal_utils import deal_record
 from models import UpdateAddressRequest, ClearDealsResult
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
-
-
-def _to_record(row: PropertyDeal) -> dict:
-    deal = json.loads(row.deal_json)
-    deal["address"]      = row.address   # always use the (possibly patched) column value
-    deal["sale_id"]      = row.sale_id
-    deal["source"]       = row.source
-    deal["municipality"] = row.municipality
-    deal["created_at"]   = row.created_at.isoformat() if row.created_at else None
-    deal["updated_at"]   = row.updated_at.isoformat() if row.updated_at else None
-    return deal
 
 
 def list_statement(source: Optional[str], skip: int, limit: int):
@@ -42,7 +32,7 @@ def list_deals(
     db:     Session = Depends(get_db),
 ):
     rows    = db.scalars(list_statement(source, skip, limit)).all()
-    records = [_to_record(r) for r in rows]
+    records = [deal_record(r) for r in rows]
     # The score lives inside deal_json, so ranking happens after loading. The
     # default page size covers the whole deal list in normal use.
     records.sort(key=lambda d: d.get("score") or 0, reverse=True)

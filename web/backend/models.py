@@ -1,6 +1,10 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# The most properties one share email may cover. It bounds the PDF and email a
+# single request can make the (single-instance) API build.
+MAX_SHARED_PROPERTIES = 100
 
 
 # ── Requests ──────────────────────────────────────────────────────────────────
@@ -67,17 +71,19 @@ class ClearDealsResult(BaseModel):
     source:  Optional[str] = None
 
 
-class SharePropertyRequest(BaseModel):
+class ShareRequest(BaseModel):
     recipient_name:  str
     recipient_email: str
     sender_name:     Optional[str] = None
     note:            Optional[str] = None
-    deal:            dict
 
 
-class ShareFavoritesRequest(BaseModel):
-    recipient_name:  str
-    recipient_email: str
-    sender_name:     Optional[str] = None
-    note:            Optional[str] = None
-    deals:           list[dict]
+# Shares name deals by sale_id, and the server loads them from property_deals.
+# Clients used to post whole deal objects, which put whatever the browser sent
+# (addresses, verdicts, red flags) into an email from the business domain.
+class SharePropertyRequest(ShareRequest):
+    sale_id: str
+
+
+class ShareFavoritesRequest(ShareRequest):
+    sale_ids: list[str] = Field(min_length=1, max_length=MAX_SHARED_PROPERTIES)

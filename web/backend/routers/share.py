@@ -1,20 +1,27 @@
+import logging
 import os
 import re
 import sys
 import smtplib
 import tempfile
-from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
+from typing import Optional
 
 import resend
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
 from investment_analyzer import Deal
 from generate_pdf_report import build_and_save_pdf
-from models import SharePropertyRequest, ShareFavoritesRequest
+
+from database import SessionLocal, utcnow
+from deal_utils import deal_records_by_sale_id
+from jobs import JobError, complete_job, create_job, run_job, update_job
+from models import JobStarted, ShareRequest, SharePropertyRequest, ShareFavoritesRequest
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/share", tags=["share"])
 
@@ -459,156 +466,168 @@ def _send_via_smtp(subject: str, html_body: str, recipient_name: str,
         smtp.send_message(msg)
 
 
-@router.post("/property")
-def share_property(req: SharePropertyRequest):
-    if not _EMAIL_RE.match(req.recipient_email):
+def _email_backend() -> Optional[str]:
+    """The configured email provider: "resend", "smtp", or None."""
+    if os.getenv("RESEND_API_KEY"):
+        return "resend"
+    if os.getenv("SMTP_HOST"):
+        return "smtp"
+    return None
+
+
+def _check_can_send(recipient_email: str) -> None:
+    """Reject a share that can't succeed before queuing any work, while the
+    client can still get a plain HTTP error.
+
+    The 503 below deliberately has no Retry-After header: the frontend retries
+    503s that carry one (the database resuming), and retrying can't fix a
+    missing email configuration.
+    """
+    if not _EMAIL_RE.match(recipient_email):
         raise HTTPException(400, "Invalid recipient email address.")
-
-    use_resend = bool(os.getenv("RESEND_API_KEY"))
-    use_smtp   = bool(os.getenv("SMTP_HOST"))
-
-    if not use_resend and not use_smtp:
+    if _email_backend() is None:
         raise HTTPException(
             503,
             "Email sharing is not configured on this server. "
             "Set RESEND_API_KEY (recommended) or SMTP_HOST/SMTP_USER/SMTP_PASS.",
         )
 
-    d = req.deal
-    try:
-        deal_obj = Deal(
-            sale_id      = str(d.get("sale_id") or ""),
-            case         = str(d.get("case") or ""),
-            address      = str(d.get("address") or "Unknown"),
-            municipality = str(d.get("municipality") or ""),
-            parcel       = str(d.get("parcel") or ""),
-            min_bid      = float(d.get("min_bid") or 0),
-            tax_bid      = float(d.get("tax_bid") or 0),
-            fmv          = float(d.get("fmv") or 0),
-            assessed     = float(d.get("assessed") or 0),
-            year_built   = int(d.get("year_built") or 1950),
-            sqft         = int(d.get("sqft") or 1000),
-            bedrooms     = int(d.get("bedrooms") or 3),
-        )
-        for key, val in d.items():
-            if hasattr(deal_obj, key):
-                try:
-                    setattr(deal_obj, key, val)
-                except Exception:
-                    pass
-    except Exception as exc:
-        raise HTTPException(422, f"Invalid deal data: {exc}")
 
-    ts        = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    safe_addr = "".join(c if c.isalnum() else "_" for c in str(d.get("address", "property"))[:30])
+def _load_deals(sale_ids: list[str]) -> list[dict]:
+    """The stored deals being shared, in request order (repeats dropped).
+
+    Raises 404 naming any sale ID that isn't in the deal list. The session is
+    closed before the background job starts: the job only needs these plain
+    dicts, and a connection held for the job's duration would keep the
+    serverless database from pausing.
+    """
+    unique = list(dict.fromkeys(sale_ids))
+    with SessionLocal() as db:
+        found = deal_records_by_sale_id(db, unique)
+    missing = [sale_id for sale_id in unique if sale_id not in found]
+    if missing:
+        raise HTTPException(404, f"Deal not found: {', '.join(missing)}")
+    return [found[sale_id] for sale_id in unique]
+
+
+def _deal_from_record(d: dict) -> Deal:
+    """Rebuild an analyzed Deal from a stored deal record, for the PDF builder."""
+    deal_obj = Deal(
+        sale_id      = str(d.get("sale_id") or ""),
+        case         = str(d.get("case") or ""),
+        address      = str(d.get("address") or "Unknown"),
+        municipality = str(d.get("municipality") or ""),
+        parcel       = str(d.get("parcel") or ""),
+        min_bid      = float(d.get("min_bid") or 0),
+        tax_bid      = float(d.get("tax_bid") or 0),
+        fmv          = float(d.get("fmv") or 0),
+        assessed     = float(d.get("assessed") or 0),
+        year_built   = int(d.get("year_built") or 1950),
+        sqft         = int(d.get("sqft") or 1000),
+        bedrooms     = int(d.get("bedrooms") or 3),
+    )
+    # Copy the stored analysis results (verdict, score, projections…) onto it.
+    for key, val in d.items():
+        if hasattr(deal_obj, key):
+            try:
+                setattr(deal_obj, key, val)
+            except Exception:
+                pass
+    return deal_obj
+
+
+def _send(subject: str, html_body: str, req: ShareRequest, pdf_path: Path, pdf_name: str) -> None:
+    """Send through the configured provider. Delivery failures become JobErrors,
+    so the polling client sees a readable reason."""
+    try:
+        if _email_backend() == "resend":
+            _send_via_resend(subject, html_body, req.recipient_name,
+                             req.recipient_email, pdf_path, pdf_name)
+        else:
+            _send_via_smtp(subject, html_body, req.recipient_name,
+                           req.recipient_email, pdf_path, pdf_name)
+    except smtplib.SMTPAuthenticationError as exc:
+        raise JobError("SMTP authentication failed. Check SMTP_USER and SMTP_PASS.") from exc
+    except smtplib.SMTPRecipientsRefused as exc:
+        raise JobError("Recipient address was rejected by the mail server.") from exc
+    except Exception as exc:
+        log.exception("Sending a share email failed")
+        raise JobError(f"Failed to send email: {exc}") from exc
+
+
+def _run_share_property(job_id: str, req: SharePropertyRequest, record: dict) -> None:
+    update_job(job_id, "running", 20, "Building PDF report…")
+    ts        = utcnow().strftime("%Y%m%d_%H%M%S")
+    safe_addr = "".join(c if c.isalnum() else "_" for c in str(record.get("address", "property"))[:30])
     pdf_name  = f"Share_{safe_addr}_{ts}.pdf"
-    # The PDF only exists to be attached, so it's built in a per-request
+    # The PDF only exists to be attached, so it's built in a per-job
     # temporary directory that's removed afterwards. It used to be written to
     # the shared reports folder, where two shares in the same second collided.
     with tempfile.TemporaryDirectory(prefix="share-") as workdir:
         pdf_path = Path(workdir) / pdf_name
         build_and_save_pdf(
-            [deal_obj],
+            [_deal_from_record(record)],
             pdf_path,
-            report_title=f"Property Analysis — {d.get('address', '')}",
+            report_title=f"Property Analysis — {record.get('address', '')}",
             skip_cover=True,
         )
 
-        subject   = (f"Property Analysis: {d.get('address', 'Property')} "
-                     f"[{d.get('verdict', '')}]").replace("\n", " ").replace("\r", " ")
-        html_body = _build_html(d, req.sender_name or "", req.recipient_name,
+        update_job(job_id, "running", 70, "Sending email…")
+        subject   = (f"Property Analysis: {record.get('address', 'Property')} "
+                     f"[{record.get('verdict', '')}]").replace("\n", " ").replace("\r", " ")
+        html_body = _build_html(record, req.sender_name or "", req.recipient_name,
                                 note=req.note or "")
+        _send(subject, html_body, req, pdf_path, pdf_name)
 
-        try:
-            if use_resend:
-                _send_via_resend(subject, html_body, req.recipient_name,
-                                 req.recipient_email, pdf_path, pdf_name)
-            else:
-                _send_via_smtp(subject, html_body, req.recipient_name,
-                               req.recipient_email, pdf_path, pdf_name)
-        except smtplib.SMTPAuthenticationError:
-            raise HTTPException(500, "SMTP authentication failed. Check SMTP_USER and SMTP_PASS.")
-        except smtplib.SMTPRecipientsRefused:
-            raise HTTPException(400, "Recipient address was rejected by the mail server.")
-        except Exception as exc:
-            raise HTTPException(500, f"Failed to send email: {exc}")
-
-    return {"status": "sent", "recipient": req.recipient_email}
+    complete_job(job_id, f"Sent to {req.recipient_email}",
+                 result={"recipient": req.recipient_email, "count": 1})
 
 
-@router.post("/favorites")
-def share_favorites(req: ShareFavoritesRequest):
-    if not _EMAIL_RE.match(req.recipient_email):
-        raise HTTPException(400, "Invalid recipient email address.")
-    if not req.deals:
-        raise HTTPException(422, "No deals provided.")
-
-    use_resend = bool(os.getenv("RESEND_API_KEY"))
-    use_smtp   = bool(os.getenv("SMTP_HOST"))
-
-    if not use_resend and not use_smtp:
-        raise HTTPException(
-            503,
-            "Email sharing is not configured on this server. "
-            "Set RESEND_API_KEY (recommended) or SMTP_HOST/SMTP_USER/SMTP_PASS.",
-        )
-
-    deal_objects = []
-    for d in req.deals:
-        try:
-            deal_obj = Deal(
-                sale_id      = str(d.get("sale_id") or ""),
-                case         = str(d.get("case") or ""),
-                address      = str(d.get("address") or "Unknown"),
-                municipality = str(d.get("municipality") or ""),
-                parcel       = str(d.get("parcel") or ""),
-                min_bid      = float(d.get("min_bid") or 0),
-                tax_bid      = float(d.get("tax_bid") or 0),
-                fmv          = float(d.get("fmv") or 0),
-                assessed     = float(d.get("assessed") or 0),
-                year_built   = int(d.get("year_built") or 1950),
-                sqft         = int(d.get("sqft") or 1000),
-                bedrooms     = int(d.get("bedrooms") or 3),
-            )
-            for key, val in d.items():
-                if hasattr(deal_obj, key):
-                    try:
-                        setattr(deal_obj, key, val)
-                    except Exception:
-                        pass
-            deal_objects.append(deal_obj)
-        except Exception as exc:
-            raise HTTPException(422, f"Invalid deal data: {exc}")
-
-    ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+def _run_share_favorites(job_id: str, req: ShareFavoritesRequest, records: list[dict]) -> None:
+    count = len(records)
+    update_job(job_id, "running", 20, f"Building PDF report for {count} properties…")
+    ts       = utcnow().strftime("%Y%m%d_%H%M%S")
     pdf_name = f"SavedProperties_{ts}.pdf"
 
-    # Built in a per-request temporary directory, like share_property above.
+    # Built in a per-job temporary directory, like _run_share_property above.
     with tempfile.TemporaryDirectory(prefix="share-") as workdir:
         pdf_path = Path(workdir) / pdf_name
         build_and_save_pdf(
-            deal_objects,
+            [_deal_from_record(record) for record in records],
             pdf_path,
-            report_title=f"Saved Properties — {len(deal_objects)} Selected",
+            report_title=f"Saved Properties — {count} Selected",
             skip_cover=False,
         )
 
-        subject   = f"Saved Properties Analysis — {len(deal_objects)} Properties"
-        html_body = _build_html_multi(req.deals, req.sender_name or "",
+        update_job(job_id, "running", 70, "Sending email…")
+        subject   = f"Saved Properties Analysis — {count} Properties"
+        html_body = _build_html_multi(records, req.sender_name or "",
                                       req.recipient_name, note=req.note or "")
+        _send(subject, html_body, req, pdf_path, pdf_name)
 
-        try:
-            if use_resend:
-                _send_via_resend(subject, html_body, req.recipient_name,
-                                 req.recipient_email, pdf_path, pdf_name)
-            else:
-                _send_via_smtp(subject, html_body, req.recipient_name,
-                               req.recipient_email, pdf_path, pdf_name)
-        except smtplib.SMTPAuthenticationError:
-            raise HTTPException(500, "SMTP authentication failed. Check SMTP_USER and SMTP_PASS.")
-        except smtplib.SMTPRecipientsRefused:
-            raise HTTPException(400, "Recipient address was rejected by the mail server.")
-        except Exception as exc:
-            raise HTTPException(500, f"Failed to send email: {exc}")
+    complete_job(job_id, f"Sent to {req.recipient_email}",
+                 result={"recipient": req.recipient_email, "count": count})
 
-    return {"status": "sent", "recipient": req.recipient_email, "count": len(deal_objects)}
+
+# Both share endpoints validate and load deals inline (fast), then build the PDF
+# and send the email in a background job. PDF rendering plus the email
+# provider's response time could outlast the 45-second limit Static Web Apps
+# puts on proxied API requests. Poll GET /api/jobs/{job_id}; the finished job's
+# result is {"recipient": ..., "count": ...}.
+
+@router.post("/property", response_model=JobStarted)
+def share_property(req: SharePropertyRequest, background_tasks: BackgroundTasks):
+    _check_can_send(req.recipient_email)
+    [record] = _load_deals([req.sale_id])
+    job_id = create_job()
+    background_tasks.add_task(run_job, job_id, "Share failed", _run_share_property, req, record)
+    return JobStarted(job_id=job_id)
+
+
+@router.post("/favorites", response_model=JobStarted)
+def share_favorites(req: ShareFavoritesRequest, background_tasks: BackgroundTasks):
+    _check_can_send(req.recipient_email)
+    records = _load_deals(req.sale_ids)
+    job_id = create_job()
+    background_tasks.add_task(run_job, job_id, "Share failed", _run_share_favorites, req, records)
+    return JobStarted(job_id=job_id)
