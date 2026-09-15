@@ -195,6 +195,29 @@ cd web/frontend && npm run lint && npm run build
 `terraform fmt`, `validate`, `tflint`, and Checkov. It checks code only and
 never contacts Azure.
 
+## Deployment
+
+`.github/workflows/deploy.yml` ships the app to Azure:
+
+- **Pull requests** build the API image without publishing it.
+- **Pushes to `main`** first publish `ghcr.io/admoseley/realestate-api`, tagged
+  `sha-<commit>` and `latest`. After you approve the run in the `production`
+  environment, the workflow:
+  1. rolls the Container App to that image
+  2. waits for the new revision to become ready
+  3. builds the frontend and deploys it to the Static Web App
+
+Azure access uses GitHub OIDC federation, so the repository stores no Azure
+credentials, and the Static Web App deployment token is fetched during each
+run. The deploy job stays skipped until the one-time setup is done:
+
+1. Apply the Azure environment, following [`infra/README.md`](infra/README.md).
+2. Run `scripts/oidc/setup-github-oidc.sh`. It creates the
+   `github-realestate` identity (Contributor on `rg-realestate-prod` only),
+   the repository variables, and the `production` environment.
+
+Until the cutover, merges to `main` also auto-deploy to Render and Netlify.
+
 ## Contributing
 
 Work follows issue → branch → pull request: open an issue, branch as

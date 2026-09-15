@@ -41,10 +41,11 @@ Confirm real spend in Cost Management about 48 hours after the first apply.
 - **Owner** on the subscription. The apply creates role assignments and a
   subscription budget, and registers resource providers.
 - **The API image published and public** at
-  `ghcr.io/admoseley/realestate-api:latest`. The deploy pipeline (#8) publishes
-  it. GitHub creates new packages as private, so change the package's
-  visibility to public before applying. The first Container App revision
-  pulls this image.
+  `ghcr.io/admoseley/realestate-api:latest`. The Deploy workflow
+  (`.github/workflows/deploy.yml`) publishes it on every push to `main`, even
+  before Azure is set up. GitHub creates new packages as private, so change
+  the package's visibility to public in its settings before applying. The
+  first Container App revision pulls this image.
 
 ## First deployment (owner-run)
 
@@ -113,9 +114,24 @@ terraform apply -var enable_custom_domain=true
 To keep it attached on later applies, set `enable_custom_domain = true` in
 `terraform.tfvars`. Static Web Apps issues the TLS certificate automatically.
 
-### 5. Deploy the frontend and invite users
+### 5. Connect the deploy pipeline
 
-See the deploy pipeline (#8) and the sign-in configuration (#9).
+From the repository root, run the one-time GitHub OIDC setup. It creates:
+- the `github-realestate` identity, with Contributor on `rg-realestate-prod` only
+- the repository variables
+- the `production` environment
+
+```bash
+bash scripts/oidc/setup-github-oidc.sh
+```
+
+Then start the first deployment, and approve it when GitHub asks:
+
+```bash
+gh workflow run deploy.yml --repo admoseley/realestate --ref main
+```
+
+Inviting users is part of the sign-in configuration (#9).
 
 ## Design notes
 
