@@ -442,7 +442,7 @@ def _send_via_smtp(subject: str, html_body: str, recipient_name: str,
     msg["From"]    = f"{FROM_NAME} <{FROM_EMAIL}>"
     msg["To"]      = f"{recipient_name} <{recipient_email}>"
     msg.set_content(
-        f"See the attached PDF for the full property analysis.",
+        "See the attached PDF for the full property analysis.",
         subtype="plain",
     )
     msg.add_alternative(html_body, subtype="html")

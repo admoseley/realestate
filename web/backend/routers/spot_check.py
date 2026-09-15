@@ -1,12 +1,11 @@
 import json
 import os
 import sys
-import tempfile
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, str(Path(__file__).parents[3]))

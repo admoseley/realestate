@@ -1,0 +1,31 @@
+# Keep the API image build context small and free of secrets/local artifacts.
+# The Dockerfile copies the repo root (the analysis scripts live there), so
+# anything not needed at runtime is excluded here.
+
+# VCS / CI / editor
+.git
+.github
+.idea
+.vscode
+.DS_Store
+
+# Secrets and local environment
+.env
+*.env
+.venv
+venv
+
+# Frontend is built and hosted separately (Static Web Apps)
+web/frontend
+
+# Python caches and tooling
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+web/backend/tests
+
+# Generated outputs and local data
+web/backend/reports
+reports.db
+*.pdf

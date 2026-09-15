@@ -11,6 +11,8 @@ __pycache__/
 .venv/
 venv/
 env/
+.pytest_cache/
+.ruff_cache/
 
 # Generated outputs (not for version control)
 *.pdf

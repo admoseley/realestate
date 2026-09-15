@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
@@ -17,7 +17,6 @@ from sheriff_sale_analyzer import pdf_to_text, parse_sheriff_text, enrich_proper
 
 from database import Report, get_db
 from jobs import create_job, update_job, fail_job
-from models import JobStatus
 from deal_utils import upsert_deal, pdf_hash as compute_pdf_hash
 
 router      = APIRouter(prefix="/api/sheriff-sale", tags=["sheriff-sale"])
