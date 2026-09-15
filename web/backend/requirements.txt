@@ -8,7 +8,6 @@ reportlab>=3.6.8
 Pillow>=9.0.0
 tabulate>=0.9.0
 requests>=2.25.0
-python-dotenv>=1.0.0
 resend>=2.0.0
 # Azure SQL: ODBC Driver 18 via pyodbc, authenticated with a Microsoft Entra token
 pyodbc==5.2.0

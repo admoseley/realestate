@@ -4,8 +4,9 @@ import tempfile
 import uuid
 from dataclasses import asdict
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
@@ -16,6 +17,7 @@ from spot_check import geocode_nominatim, parse_municipality, lookup_property
 from database import Report, SessionLocal, utcnow
 from models import JobStarted, SpotCheckRequest
 from deal_utils import upsert_deal, spot_sale_id
+from identity import current_user
 from jobs import complete_job, create_job, run_job, update_job
 from storage import get_storage
 
@@ -128,7 +130,8 @@ def _run_spot_check(job_id: str, req: SpotCheckRequest) -> None:
 
 
 @router.post("", response_model=JobStarted)
-def start_spot_check(req: SpotCheckRequest, background_tasks: BackgroundTasks):
+def start_spot_check(req: SpotCheckRequest, background_tasks: BackgroundTasks,
+                     user: Optional[str] = Depends(current_user)):
     """Queue a spot check and return its job ID.
 
     This used to run inline and return the analysis. County lookups,
@@ -137,6 +140,6 @@ def start_spot_check(req: SpotCheckRequest, background_tasks: BackgroundTasks):
     poll ``GET /api/jobs/{job_id}``, and the finished job carries ``report_id``
     and ``result = {"deal": ..., "warning": ...}``.
     """
-    job_id = create_job()
+    job_id = create_job(kind="spot_check", created_by=user)
     background_tasks.add_task(run_job, job_id, "Spot check failed", _run_spot_check, req)
     return JobStarted(job_id=job_id)

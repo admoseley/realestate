@@ -3,3 +3,7 @@ pytest==8.3.4
 # Starlette's TestClient in fastapi 0.115 predates httpx 0.28's API change.
 httpx==0.27.2
 ruff==0.8.6
+# Loads web/backend/.env for local development. The app doesn't require it in
+# production. uvicorn[standard] still installs it there, but the image has no
+# .env file to load.
+python-dotenv==1.0.1

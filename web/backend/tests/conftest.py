@@ -18,6 +18,9 @@ os.environ["DB_PATH"] = str(_TMP / "test.db")
 os.environ["REPORTS_DIR"] = str(_TMP / "reports")
 os.environ.pop("AZURE_SQL_CONNECTION_STRING", None)
 os.environ.pop("REPORTS_BLOB_URL", None)
+# Settings that change API behavior start from their defaults; tests opt in.
+for setting in ("ENABLE_DEBUG", "SHARE_LIMIT_PER_USER_PER_HOUR", "SHARE_LIMIT_PER_HOUR"):
+    os.environ.pop(setting, None)
 
 
 @pytest.fixture(scope="session")

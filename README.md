@@ -22,7 +22,7 @@ buy-and-hold analysis, and produces branded PDF reports that can be shared by em
 | Frontend | React 19, Vite, Tailwind, React Router | `web/frontend` |
 | API | FastAPI, SQLAlchemy, ReportLab, `pdftotext` (poppler) | `web/backend` |
 | Analysis engine | Pure Python scripts shared by the API and CLI | repo root (`investment_analyzer.py`, `sheriff_sale_analyzer.py`, `spot_check.py`, `generate_pdf_report.py`) |
-| Email | Resend | `web/backend/routers/share.py` |
+| Email | Resend | `web/backend/mailer.py` (the only module that sends mail), used by `web/backend/routers/share.py` |
 
 > **Hosting migration in progress.** The app currently runs on Netlify (frontend) and
 > Render (API). It is moving to Azure — Static Web Apps with Microsoft sign-in,
@@ -42,12 +42,18 @@ uvicorn main:app --reload        # http://localhost:8000/docs
 Sheriff-sale parsing shells out to `pdftotext`, so install poppler locally
 (`brew install poppler` on macOS) or use Docker (below).
 
-Configuration is read from the environment or `web/backend/.env` (git-ignored — never commit it):
+Configuration is read from environment variables. For local development it
+can also come from `web/backend/.env` (git-ignored, so never commit it), which
+python-dotenv from `requirements-dev.txt` loads. The production image never
+contains a `.env` file: `.dockerignore` excludes it.
 
 | Variable | Purpose |
 |---|---|
-| `RESEND_API_KEY` | Enables email sharing |
+| `RESEND_API_KEY` | Enables email sharing through Resend. In Azure the value comes from Key Vault |
 | `FROM_EMAIL` / `FROM_NAME` | Sender identity for shared reports |
+| `SHARE_LIMIT_PER_USER_PER_HOUR` | Shares one signed-in user may send per rolling hour (default `20`) |
+| `SHARE_LIMIT_PER_HOUR` | Shares the whole app may send per rolling hour (default `60`) |
+| `ENABLE_DEBUG` | `true` turns on `POST /api/debug/analyze-pdf`, which otherwise returns `404` |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins (defaults to local Vite ports) |
 | `DB_PATH` | SQLite database file for local development (default `reports.db`) |
 | `REPORTS_DIR` | Local folder for report PDFs when Blob Storage isn't configured (default `web/backend/reports`) |
@@ -109,6 +115,27 @@ The frontend's API client (`web/frontend/src/api/client.js`):
 - retries `503` responses that carry `Retry-After`, showing a "Waking up the database…" banner meanwhile
 
 A `503` without `Retry-After` is treated as a real error.
+
+### Security
+
+Sign-in and role checks happen at the edge. Static Web Apps admits only
+invited users (`staticwebapp.config.json`, tracked in #9), and the API is
+reachable only through its proxy. The API does no access control of its own.
+Inside the API:
+
+- **Share emails** contain only stored deal data, looked up by `sale_id`. Every
+  interpolated value is HTML-escaped, including the sender's note. Display
+  names are stripped of characters that could add recipients or headers, and
+  request fields have length limits.
+- **Share volume** is capped per rolling hour, both per signed-in user and
+  app-wide (`429` when exceeded). The user comes from the
+  `x-ms-client-principal` header that Static Web Apps adds. That header is used
+  only to attribute jobs (`jobs.created_by`) and key limits, never for access
+  control, and the app-wide cap holds even if the header is missing.
+- **Uploads** must be named `.pdf`, carry a PDF signature, and be at most 25 MB.
+  Static Web Apps refuses bodies over 30 MB.
+- **Debug reports** (`/api/debug/*`) return `404` unless `ENABLE_DEBUG=true`.
+- **Email** is sent only through `web/backend/mailer.py` (Resend today).
 
 ### Frontend
 

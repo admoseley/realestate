@@ -57,6 +57,11 @@ def test_spot_check_adds_the_property_to_the_deal_list(client):
     assert spot_sale_id(request["address"], request["price"]) in sale_ids
 
 
+@pytest.mark.parametrize("overrides", [{"address": "x" * 301}, {"address": ""}, {"price": 0}])
+def test_invalid_spot_check_requests_are_rejected(client, overrides):
+    assert client.post("/api/spot-check", json=spot_check_request(**overrides)).status_code == 422
+
+
 def test_a_failing_spot_check_reports_the_error_on_the_job(client, monkeypatch):
     def broken(_deal):
         raise RuntimeError("analyzer exploded")

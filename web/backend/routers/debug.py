@@ -3,6 +3,7 @@ Debug endpoint — runs the sheriff sale pipeline with full verbose logging
 and returns a downloadable plain-text diagnostic report.
 """
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -10,28 +11,43 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import PlainTextResponse
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
 from sheriff_sale_analyzer import parse_sheriff_text, enrich_property, fetch_wprdc_parcel, fetch_ac_assessment, fetch_ac_search
 
-router = APIRouter(prefix="/api/debug", tags=["debug"])
+from uploads import read_pdf_upload
+
+
+def require_debug_enabled() -> None:
+    """Answer 404, as if the route didn't exist, unless ENABLE_DEBUG=true.
+
+    The debug report runs the whole pipeline, including live county lookups,
+    and returns raw parser output. It's a troubleshooting tool, so it stays
+    off unless deliberately switched on. The setting is read per request.
+    """
+    if os.getenv("ENABLE_DEBUG", "false").lower() != "true":
+        raise HTTPException(404, "Not Found")
+
+
+router = APIRouter(prefix="/api/debug", tags=["debug"],
+                   dependencies=[Depends(require_debug_enabled)])
 
 
 @router.post("/analyze-pdf", response_class=PlainTextResponse)
 async def debug_analyze_pdf(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Must upload a PDF file.")
-
-    content = await file.read()
+    content = await read_pdf_upload(file)
 
     # Each request works in its own directory, removed once the report is built
     # (even on errors). A fixed /tmp filename used to let concurrent debug runs
     # overwrite each other's extracted text.
     with tempfile.TemporaryDirectory(prefix="sheriff-debug-") as workdir:
-        report = _build_report(file.filename, content, Path(workdir))
+        # pdftotext and live county lookups are blocking work: run them in the
+        # threadpool so they don't stall the event loop for other requests.
+        report = await run_in_threadpool(_build_report, file.filename, content, Path(workdir))
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     return PlainTextResponse(

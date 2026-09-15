@@ -4,8 +4,10 @@ import sys
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, Form
+from fastapi.concurrency import run_in_threadpool
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
@@ -16,7 +18,9 @@ from sheriff_sale_analyzer import pdf_to_text, parse_sheriff_text, enrich_proper
 from database import Report, SessionLocal, utcnow
 from jobs import create_job, update_job, fail_job
 from deal_utils import upsert_deal, pdf_hash as compute_pdf_hash
+from identity import current_user
 from storage import get_storage
+from uploads import read_pdf_upload
 
 router = APIRouter(prefix="/api/sheriff-sale", tags=["sheriff-sale"])
 
@@ -172,13 +176,16 @@ def _run_pipeline(job_id: str, workdir: str, enrich: bool):
 @router.post("/upload")
 async def analyze_from_upload(background_tasks: BackgroundTasks,
                                enrich: bool = Form(True),
-                               file:   UploadFile = File(...)):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Uploaded file must be a PDF.")
+                               file:   UploadFile = File(...),
+                               user:   Optional[str] = Depends(current_user)):
+    content = await read_pdf_upload(file)
     workdir = Path(tempfile.mkdtemp(prefix="sheriff-sale-"))
     try:
-        (workdir / UPLOAD_FILENAME).write_bytes(await file.read())
-        job_id = create_job()
+        (workdir / UPLOAD_FILENAME).write_bytes(content)
+        # create_job is blocking database I/O that may wait out a database
+        # resume. Called directly from this async endpoint, it would stall the
+        # event loop, and with it every other request.
+        job_id = await run_in_threadpool(create_job, kind="sheriff_sale", created_by=user)
     except Exception:
         shutil.rmtree(workdir, ignore_errors=True)
         raise
