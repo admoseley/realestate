@@ -1,0 +1,86 @@
+# ---------------------------------------------------------------------------
+# Terraform CI for infra/, adapted from admoseley/Terraform_ADM.
+#
+# Runs on pull requests and pushes to main that touch infra/ (or this file).
+# It checks code only and never contacts Azure, so it needs no credentials:
+#   - fmt      : formatting is consistent
+#   - init     : providers resolve (backend disabled, so no state access)
+#   - validate : configuration is internally valid
+#   - tflint   : lint and Azure-specific rules
+#   - checkov  : security scan. ENFORCING: any unresolved finding fails the
+#                run. Deliberate exceptions are suppressed inline, each with a
+#                reason, as `#checkov:skip=CKV_...:reason` in the resource.
+# Applying is manual and owner-run (see infra/README.md).
+# ---------------------------------------------------------------------------
+name: Terraform CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Terraform (fmt, validate, tflint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.2"
+
+      - name: Terraform fmt (check)
+        run: terraform fmt -check -recursive
+
+      # -backend=false keeps init from reaching the state storage account.
+      - name: Terraform init
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.64.0
+
+      - name: TFLint
+        run: |
+          tflint --init
+          tflint --format compact
+        env:
+          # Avoids GitHub API rate limits when tflint downloads the ruleset.
+          GITHUB_TOKEN: ${{ github.token }}
+
+  security:
+    name: Checkov security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          framework: terraform
+          quiet: true
+          soft_fail: false
+          output_format: cli
+          download_external_modules: false
