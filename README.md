@@ -79,6 +79,37 @@ Health endpoints: `GET /api/health` checks the process only and never touches
 the database; `GET /api/health/db` wakes the database and returns `503` while it
 resumes.
 
+### Background jobs
+
+Sheriff-sale analysis, spot checks, and shares respond immediately with
+`{"job_id": …}` and do the work in the background. Static Web Apps cuts off
+proxied API requests after 45 seconds, and county lookups, PDF rendering, and
+email delivery can take longer. Poll `GET /api/jobs/{job_id}` until `status` is
+`done` or `error`:
+
+| Job | Started by | Available when `done` |
+|---|---|---|
+| Sheriff sale | `POST /api/sheriff-sale/upload` (multipart PDF) | `report_id` |
+| Spot check | `POST /api/spot-check` | `report_id`, `result.deal`, `result.warning` |
+| Share one deal | `POST /api/share/property` with `sale_id` | `result.recipient`, `result.count` |
+| Share favorites | `POST /api/share/favorites` with `sale_ids` (1–100) | `result.recipient`, `result.count` |
+
+A failed job has `status: "error"` with the reason in `message`. Jobs are
+stored in the database, so progress survives an API restart. A job the restart
+interrupted is marked failed at startup.
+
+Shares identify deals by `sale_id`, and the API emails the analysis stored in
+the deal list, never deal data posted by the browser. Invalid recipients,
+unknown deals, and missing email configuration are rejected up front with
+`400`, `404`, and `503`.
+
+The frontend's API client (`web/frontend/src/api/client.js`):
+- polls jobs one request at a time
+- starts waking the database when the app loads
+- retries `503` responses that carry `Retry-After`, showing a "Waking up the database…" banner meanwhile
+
+A `503` without `Retry-After` is treated as a real error.
+
 ### Frontend
 
 ```bash
