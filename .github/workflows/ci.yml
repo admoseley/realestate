@@ -91,7 +91,7 @@ jobs:
       - name: Boot and smoke-test
         run: |
           docker run -d --name api -p 8000:8000 realestate-api:ci
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8000/api/health/db > /dev/null; then
               echo "API is up"
               uid=$(docker exec api id -u)
