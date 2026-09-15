@@ -10,8 +10,8 @@ MAX_SHARED_PROPERTIES = 100
 # ── Requests ──────────────────────────────────────────────────────────────────
 
 class SpotCheckRequest(BaseModel):
-    address: str
-    price: float
+    address: str                = Field(min_length=1, max_length=300)   # reports.title holds 300
+    price: float                = Field(gt=0)
     fmv: Optional[float]        = None
     sqft: Optional[int]         = None
     year: Optional[int]         = None
