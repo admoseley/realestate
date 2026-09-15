@@ -54,6 +54,7 @@ contains a `.env` file: `.dockerignore` excludes it.
 | `SHARE_LIMIT_PER_USER_PER_HOUR` | Shares one signed-in user may send per rolling hour (default `20`) |
 | `SHARE_LIMIT_PER_HOUR` | Shares the whole app may send per rolling hour (default `60`) |
 | `ENABLE_DEBUG` | `true` turns on `POST /api/debug/analyze-pdf`, which otherwise returns `404` |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Sends telemetry to Application Insights (see Observability). Leave unset locally |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins (defaults to local Vite ports) |
 | `DB_PATH` | SQLite database file for local development (default `reports.db`) |
 | `REPORTS_DIR` | Local folder for report PDFs when Blob Storage isn't configured (default `web/backend/reports`) |
@@ -137,6 +138,20 @@ Inside the API:
 - **Debug reports** (`/api/debug/*`) return `404` unless `ENABLE_DEBUG=true`.
 - **Email** is sent only through `web/backend/mailer.py` (Resend today).
 
+### Observability
+
+Setting `APPLICATIONINSIGHTS_CONNECTION_STRING` turns on the Azure Monitor
+OpenTelemetry distro (`web/backend/observability.py`). It records:
+- incoming requests
+- outgoing HTTP calls (county data, map tiles, Blob Storage)
+- exceptions and metrics
+- warnings and errors logged through the app's `realestate.*` loggers
+
+Container Apps health probes (`/api/health`) are excluded to keep ingestion
+down, while the database wake-up check (`/api/health/db`) is still recorded.
+Standard `OTEL_*` environment variables override these defaults. Without a
+connection string, nothing is configured.
+
 ### Frontend
 
 ```bash
@@ -151,6 +166,12 @@ npm run dev                      # Vite proxies /api → http://localhost:8000
 docker build -t realestate-api .
 docker run -p 8000:8000 realestate-api
 ```
+
+The image runs as an unprivileged user (UID 10001) with a single uvicorn
+worker, and contains only the analysis modules, the logo, and `web/backend`.
+SQLite and local report PDFs go to `/app/data`, the only writable directory;
+mount a volume there to keep local data between runs. The server listens on
+`PORT` (default `8000`).
 
 ## Tests and linting
 
