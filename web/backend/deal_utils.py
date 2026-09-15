@@ -1,13 +1,12 @@
 import hashlib
 import json
 import re
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from database import PropertyDeal
+from database import PropertyDeal, utcnow
 
 
 def _fingerprint(address: str, min_bid, municipality: Optional[str]) -> str:
@@ -47,8 +46,8 @@ def upsert_deal(
                 deal_json    = json.dumps(deal_dict, default=str),
                 fingerprint  = fp,
                 pdf_hash     = source_pdf_hash,
-                created_at   = datetime.utcnow(),
-                updated_at   = datetime.utcnow(),
+                created_at   = utcnow(),
+                updated_at   = utcnow(),
             )
             db.add(row)
             db.flush()
@@ -65,5 +64,5 @@ def upsert_deal(
     existing.deal_json    = json.dumps(deal_dict, default=str)
     existing.fingerprint  = fp
     existing.pdf_hash     = source_pdf_hash or existing.pdf_hash
-    existing.updated_at   = datetime.utcnow()
+    existing.updated_at   = utcnow()
     return "updated"

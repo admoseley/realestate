@@ -25,3 +25,27 @@ def test_reports_are_empty_on_a_fresh_database(client):
 
 def test_unknown_job_returns_404(client):
     assert client.get("/api/jobs/does-not-exist").status_code == 404
+
+
+def test_health_does_not_need_the_database(client):
+    assert client.get("/api/health").json() == {"status": "ok"}
+
+
+def test_database_health_reports_ready(client):
+    response = client.get("/api/health/db")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_database_unavailable_becomes_503_with_retry_after(client, monkeypatch):
+    from database import DatabaseUnavailable
+
+    def unavailable(_job_id):
+        raise DatabaseUnavailable("The database is starting up. Please retry shortly.")
+
+    monkeypatch.setattr("main.get_job", unavailable)
+    response = client.get("/api/jobs/any")
+
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "10"
