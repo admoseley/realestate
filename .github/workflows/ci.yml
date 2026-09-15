@@ -46,6 +46,15 @@ jobs:
         working-directory: web/backend
         run: pytest
 
+      # Fails if a model in database.py changed without a matching migration.
+      - name: Migrations match models
+        working-directory: web/backend
+        env:
+          DB_PATH: ${{ runner.temp }}/migrations-check.db
+        run: |
+          alembic upgrade head
+          alembic check
+
   frontend:
     name: Frontend (lint + build)
     runs-on: ubuntu-latest

@@ -1,8 +1,19 @@
-FROM python:3.11-slim
+# API image. Debian 12 (bookworm) is pinned because Microsoft publishes its
+# ODBC Driver 18 — required to reach Azure SQL — per Debian release.
+FROM python:3.11-slim-bookworm
 
-# Install pdftotext (poppler-utils) and other system deps
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    poppler-utils \
+# poppler-utils: pdftotext, which parses sheriff-sale PDFs.
+# msodbcsql18 + unixodbc: Azure SQL connectivity. curl/gnupg are only needed to
+# add Microsoft's package repository, so they're removed afterwards.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg poppler-utils \
+    && curl -sSL -o /tmp/packages-microsoft-prod.deb \
+         https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
+    && dpkg -i /tmp/packages-microsoft-prod.deb \
+    && rm /tmp/packages-microsoft-prod.deb \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 unixodbc libgssapi-krb5-2 \
+    && apt-get purge -y --auto-remove curl gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
