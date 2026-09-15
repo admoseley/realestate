@@ -84,14 +84,20 @@ jobs:
         run: docker build -t realestate-api:ci .
 
       # A successful build doesn't prove the app starts (e.g. a missing system
-      # library or import error only shows up at runtime), so boot it and wait
-      # for the OpenAPI document to be served.
+      # library or import error only shows up at runtime). So boot it and wait
+      # for the database health check: startup migrations must have written the
+      # SQLite file, which proves the non-root user can write its data
+      # directory. Then fail if the container runs as root.
       - name: Boot and smoke-test
         run: |
           docker run -d --name api -p 8000:8000 realestate-api:ci
           for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8000/openapi.json > /dev/null; then
-              echo "API is up"; exit 0
+            if curl -fsS http://localhost:8000/api/health/db > /dev/null; then
+              echo "API is up"
+              uid=$(docker exec api id -u)
+              if [ "$uid" = "0" ]; then echo "The API container runs as root"; exit 1; fi
+              echo "Running as UID $uid"
+              exit 0
             fi
             sleep 2
           done
