@@ -1,0 +1,7 @@
+{
+  "name": "github-environment-production",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:admoseley/realestate:environment:production",
+  "description": "Deploy job running in the production environment of admoseley/realestate",
+  "audiences": ["api://AzureADTokenExchange"]
+}
