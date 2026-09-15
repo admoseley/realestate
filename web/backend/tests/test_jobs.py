@@ -1,5 +1,23 @@
 """Job progress is persisted in the database, so it survives restarts."""
+import uuid
+from datetime import timedelta
+
 import jobs
+from database import utcnow
+
+
+def test_jobs_can_be_counted_by_kind_user_and_time(migrated_db):
+    since = utcnow() - timedelta(minutes=1)
+    user = f"{uuid.uuid4().hex}@example.com"
+    shares_before = jobs.count_jobs_since("share", since)
+
+    jobs.create_job(kind="share", created_by=user)
+    jobs.create_job(kind="share")
+    jobs.create_job(kind="spot_check", created_by=user)
+
+    assert jobs.count_jobs_since("share", since) == shares_before + 2
+    assert jobs.count_jobs_since("share", since, created_by=user) == 1
+    assert jobs.count_jobs_since("share", utcnow() + timedelta(minutes=1)) == 0
 
 
 def test_job_lifecycle(migrated_db):

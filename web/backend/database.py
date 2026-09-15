@@ -183,6 +183,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id          = Column(String(36),  primary_key=True)        # UUID
+    kind        = Column(String(30),  nullable=True)           # sheriff_sale | spot_check | share; rate limits count by kind
     status      = Column(String(20),  nullable=False)          # pending | running | done | error
     percent     = Column(Integer,     nullable=False, default=0)
     message     = Column(String(500), nullable=False, default="")

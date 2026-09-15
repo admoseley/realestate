@@ -14,7 +14,10 @@ import json
 import logging
 import time
 import uuid
+from datetime import datetime
 from typing import Any, Callable, Optional
+
+from sqlalchemy import func, select
 
 from database import Job, SessionLocal, utcnow
 
@@ -29,10 +32,16 @@ _last_write: dict[str, tuple[float, Optional[int]]] = {}  # job_id -> (time, rep
 ORPHANED_JOB_MESSAGE = "The server restarted before this job finished. Please run it again."
 
 
-def create_job(created_by: Optional[str] = None) -> str:
+def create_job(created_by: Optional[str] = None, kind: Optional[str] = None) -> str:
+    """Record a new pending job and return its ID.
+
+    ``kind`` (sheriff_sale | spot_check | share) lets rate limits count one
+    type of job; ``created_by`` is the signed-in user, when known.
+    """
     job_id = str(uuid.uuid4())
     with SessionLocal() as db:
-        db.add(Job(id=job_id, status="pending", percent=0, message="Queued…", created_by=created_by))
+        db.add(Job(id=job_id, kind=kind, status="pending", percent=0, message="Queued…",
+                   created_by=created_by))
         db.commit()
     return job_id
 
@@ -139,3 +148,14 @@ def fail_orphaned_jobs() -> int:
         )
         db.commit()
     return count
+
+
+def count_jobs_since(kind: str, since: datetime, created_by: Optional[str] = None) -> int:
+    """How many jobs of ``kind`` were created at or after ``since`` (naive
+    UTC), optionally only those started by ``created_by``. Failed jobs count
+    too: a limit caps attempts, not successes."""
+    statement = select(func.count()).select_from(Job).where(Job.kind == kind, Job.created_at >= since)
+    if created_by is not None:
+        statement = statement.where(Job.created_by == created_by)
+    with SessionLocal() as db:
+        return db.scalar(statement)
