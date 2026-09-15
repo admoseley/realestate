@@ -11,7 +11,6 @@ would stop the serverless database from auto-pausing.
 from __future__ import annotations
 
 import json
-import logging
 import time
 import uuid
 from datetime import datetime
@@ -20,8 +19,9 @@ from typing import Any, Callable, Optional
 from sqlalchemy import func, select
 
 from database import Job, SessionLocal, utcnow
+from observability import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # Progress arrives about once per enriched property. Writing every update would
 # mean a database round trip each time, so interim "running" updates are
