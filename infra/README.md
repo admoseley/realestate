@@ -101,9 +101,10 @@ az sql server firewall-rule delete -g rg-realestate-prod -s "$(terraform output 
 
 ### 4. Connect the custom domain
 
-Create the GoDaddy record shown by `terraform output dns_record`
-(`CNAME realestateanalysis → <default hostname>`). Once it resolves, attach
-the domain:
+The custom domain is `realestate-analysis.app.estellawilson.com`. In GoDaddy's
+DNS for `estellawilson.com`, create the record that `terraform output dns_record`
+shows: a CNAME named `realestate-analysis.app`, pointing to the Static Web
+App's default hostname. Once it resolves, attach the domain:
 
 ```bash
 terraform apply -var enable_custom_domain=true

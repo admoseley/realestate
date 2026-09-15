@@ -25,10 +25,21 @@ variable "api_image" {
   default     = "ghcr.io/admoseley/realestate-api:latest"
 }
 
-variable "custom_domain" {
-  description = "Custom domain served by the Static Web App."
+variable "dns_zone" {
+  description = "DNS zone that custom_domain belongs to (hosted at GoDaddy). Used to show the exact record to create."
   type        = string
-  default     = "realestateanalysis.estellawilson.com"
+  default     = "estellawilson.com"
+}
+
+variable "custom_domain" {
+  description = "Custom domain served by the Static Web App. Must be inside dns_zone."
+  type        = string
+  default     = "realestate-analysis.app.estellawilson.com"
+
+  validation {
+    condition     = endswith(var.custom_domain, ".${var.dns_zone}")
+    error_message = "custom_domain must be a subdomain of dns_zone."
+  }
 }
 
 variable "enable_custom_domain" {

@@ -14,8 +14,16 @@ output "static_web_app_default_hostname" {
 }
 
 output "dns_record" {
-  description = "The GoDaddy DNS record to create for the custom domain before setting enable_custom_domain = true."
-  value       = "CNAME  ${split(".", var.custom_domain)[0]}  ->  ${azurerm_static_web_app.main.default_host_name}"
+  description = "The DNS record to create in dns_zone before setting enable_custom_domain = true."
+  value = {
+    type = "CNAME"
+    zone = var.dns_zone
+    # The host name relative to the zone, as GoDaddy's record form expects it.
+    # For a deeper name like realestate-analysis.app, that's every label
+    # before the zone, not just the first.
+    name  = trimsuffix(var.custom_domain, ".${var.dns_zone}")
+    value = azurerm_static_web_app.main.default_host_name
+  }
 }
 
 output "container_app_name" {
