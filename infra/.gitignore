@@ -1,0 +1,23 @@
+# Terraform working files. The provider lock file (.terraform.lock.hcl) IS
+# committed, so every apply uses the same provider builds.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Variable files can hold personal data (alert email) or overrides. Only the
+# example is committed.
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+
+# Saved plans can contain sensitive values.
+*.tfplan
+tfplan
