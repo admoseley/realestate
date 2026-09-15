@@ -4,8 +4,16 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent / ".env")
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    # python-dotenv is a development dependency (requirements-dev.txt), so the
+    # app must not require it. In production, settings are real environment
+    # variables, with secrets from Key Vault references, and the image has no
+    # .env file. (uvicorn[standard] installs python-dotenv there anyway.)
+    pass
+else:
+    load_dotenv(Path(__file__).parent / ".env")
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
