@@ -2,23 +2,24 @@ import logging
 import os
 import re
 import sys
-import smtplib
 import tempfile
-from email.message import EmailMessage
+from datetime import timedelta
+from html import escape
 from pathlib import Path
 from typing import Optional
 
-import resend
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
 from investment_analyzer import Deal
 from generate_pdf_report import build_and_save_pdf
 
+import mailer
 from database import SessionLocal, utcnow
 from deal_utils import deal_records_by_sale_id
-from jobs import JobError, complete_job, create_job, run_job, update_job
+from identity import current_user
+from jobs import JobError, complete_job, count_jobs_since, create_job, run_job, update_job
 from models import JobStarted, ShareRequest, SharePropertyRequest, ShareFavoritesRequest
 
 log = logging.getLogger(__name__)
@@ -27,11 +28,38 @@ router = APIRouter(prefix="/api/share", tags=["share"])
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-FROM_EMAIL = os.getenv("FROM_EMAIL", "contact@estellawilson.com")
-FROM_NAME  = os.getenv("FROM_NAME",  "Estella Wilson Properties LLC")
+SHARE_JOB_KIND = "share"
 
+
+def _escape_fields(deal: dict) -> dict:
+    """A copy of a deal with its text HTML-escaped, for interpolating into email.
+
+    Shared deals come from the deal list now, not the browser, but addresses,
+    red flags, and recommendations originate in scraped county data, so they
+    are escaped too, as defense in depth. Numbers pass through for formatting.
+    """
+    def clean(value):
+        if isinstance(value, str):
+            return escape(value)
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        return value
+    return {key: clean(value) for key, value in deal.items()}
+
+
+def _note_html(note: str) -> str:
+    """The sender's note, escaped, keeping its line breaks."""
+    return escape(note).replace("\n", "<br>")
+
+
+# The email builders below interpolate values straight into HTML, so each one
+# escapes its inputs first: names and the note are typed by the user, and the
+# email is sent from the business domain.
 
 def _build_html(deal: dict, sender_name: str, recipient_name: str, **kwargs) -> str:
+    deal           = _escape_fields(deal)
+    sender_name    = escape(sender_name)
+    recipient_name = escape(recipient_name)
     fmt  = lambda v: f"${v:,.0f}" if v is not None else "—"
     fmtp = lambda v: f"{v:.1f}%" if v is not None else "—"
 
@@ -67,7 +95,7 @@ def _build_html(deal: dict, sender_name: str, recipient_name: str, **kwargs) -> 
         else "<p style='margin:0 0 4px 0;'>A property analysis has been shared with you.</p>"
     )
 
-    note = kwargs.get("note", "")
+    note = _note_html(kwargs.get("note", ""))
     note_block = ""
     if note:
         note_block = f"""
@@ -224,6 +252,7 @@ def _build_html(deal: dict, sender_name: str, recipient_name: str, **kwargs) -> 
 
 
 def _property_section_rows(deal: dict) -> str:
+    deal = _escape_fields(deal)
     fmt  = lambda v: f"${v:,.0f}" if v is not None else "—"
     fmtp = lambda v: f"{v:.1f}%" if v is not None else "—"
 
@@ -343,6 +372,9 @@ def _property_section_rows(deal: dict) -> str:
 
 
 def _build_html_multi(deals: list, sender_name: str, recipient_name: str, **kwargs) -> str:
+    # Each deal is escaped in _property_section_rows.
+    sender_name    = escape(sender_name)
+    recipient_name = escape(recipient_name)
     n = len(deals)
     sender_line = (
         f"<p style='margin:0 0 4px 0;'>{sender_name} has shared {n} saved properties with you.</p>"
@@ -350,7 +382,7 @@ def _build_html_multi(deals: list, sender_name: str, recipient_name: str, **kwar
         else f"<p style='margin:0 0 4px 0;'>{n} saved properties have been shared with you.</p>"
     )
 
-    note = kwargs.get("note", "")
+    note = _note_html(kwargs.get("note", ""))
     note_block = ""
     if note:
         note_block = f"""
@@ -420,61 +452,6 @@ def _build_html_multi(deals: list, sender_name: str, recipient_name: str, **kwar
 </html>"""
 
 
-def _send_via_resend(subject: str, html_body: str, recipient_name: str,
-                     recipient_email: str, pdf_path: Path, pdf_name: str):
-    resend.api_key = os.getenv("RESEND_API_KEY")
-    with open(pdf_path, "rb") as f:
-        pdf_bytes = list(f.read())
-    params: resend.Emails.SendParams = {
-        "from":        f"{FROM_NAME} <{FROM_EMAIL}>",
-        "to":          [f"{recipient_name} <{recipient_email}>"],
-        "subject":     subject,
-        "html":        html_body,
-        "attachments": [{"filename": pdf_name, "content": pdf_bytes}],
-    }
-    resend.Emails.send(params)
-
-
-def _send_via_smtp(subject: str, html_body: str, recipient_name: str,
-                   recipient_email: str, pdf_path: Path, pdf_name: str):
-    host     = os.getenv("SMTP_HOST")
-    port     = int(os.getenv("SMTP_PORT", "587"))
-    user     = os.getenv("SMTP_USER", "")
-    password = os.getenv("SMTP_PASS", "")
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"]    = f"{FROM_NAME} <{FROM_EMAIL}>"
-    msg["To"]      = f"{recipient_name} <{recipient_email}>"
-    msg.set_content(
-        "See the attached PDF for the full property analysis.",
-        subtype="plain",
-    )
-    msg.add_alternative(html_body, subtype="html")
-    with open(pdf_path, "rb") as f:
-        msg.add_attachment(f.read(), maintype="application",
-                           subtype="pdf", filename=pdf_name)
-
-    smtp_cls = smtplib.SMTP_SSL if port == 465 else smtplib.SMTP
-    with smtp_cls(host, port, timeout=15) as smtp:
-        smtp.ehlo()
-        if port != 465:
-            smtp.starttls()
-            smtp.ehlo()
-        if user:
-            smtp.login(user, password)
-        smtp.send_message(msg)
-
-
-def _email_backend() -> Optional[str]:
-    """The configured email provider: "resend", "smtp", or None."""
-    if os.getenv("RESEND_API_KEY"):
-        return "resend"
-    if os.getenv("SMTP_HOST"):
-        return "smtp"
-    return None
-
-
 def _check_can_send(recipient_email: str) -> None:
     """Reject a share that can't succeed before queuing any work, while the
     client can still get a plain HTTP error.
@@ -485,12 +462,27 @@ def _check_can_send(recipient_email: str) -> None:
     """
     if not _EMAIL_RE.match(recipient_email):
         raise HTTPException(400, "Invalid recipient email address.")
-    if _email_backend() is None:
-        raise HTTPException(
-            503,
-            "Email sharing is not configured on this server. "
-            "Set RESEND_API_KEY (recommended) or SMTP_HOST/SMTP_USER/SMTP_PASS.",
-        )
+    if not mailer.is_configured():
+        raise HTTPException(503, "Email sharing is not configured on this server. Set RESEND_API_KEY.")
+
+
+def _check_rate_limit(user: Optional[str]) -> None:
+    """Cap share emails per rolling hour, per signed-in user and for the app.
+
+    The per-user key comes from the x-ms-client-principal header, which the
+    API can't fully trust (see identity.py), so the app-wide cap always
+    applies as well. Limits are read per request, so changing them needs only
+    a new setting. The check and the job insert aren't atomic: simultaneous
+    requests can overshoot by one or two, which is fine for this purpose.
+    The 429 carries no Retry-After, so the frontend doesn't retry it.
+    """
+    per_user = int(os.getenv("SHARE_LIMIT_PER_USER_PER_HOUR", "20"))
+    overall  = int(os.getenv("SHARE_LIMIT_PER_HOUR", "60"))
+    since    = utcnow() - timedelta(hours=1)
+    if user and count_jobs_since(SHARE_JOB_KIND, since, created_by=user) >= per_user:
+        raise HTTPException(429, f"Share limit reached ({per_user} per hour per user). Please try again later.")
+    if count_jobs_since(SHARE_JOB_KIND, since) >= overall:
+        raise HTTPException(429, f"Share limit reached ({overall} per hour for this app). Please try again later.")
 
 
 def _load_deals(sale_ids: list[str]) -> list[dict]:
@@ -537,19 +529,12 @@ def _deal_from_record(d: dict) -> Deal:
 
 
 def _send(subject: str, html_body: str, req: ShareRequest, pdf_path: Path, pdf_name: str) -> None:
-    """Send through the configured provider. Delivery failures become JobErrors,
+    """Email the report through the mailer. Delivery failures become JobErrors,
     so the polling client sees a readable reason."""
     try:
-        if _email_backend() == "resend":
-            _send_via_resend(subject, html_body, req.recipient_name,
-                             req.recipient_email, pdf_path, pdf_name)
-        else:
-            _send_via_smtp(subject, html_body, req.recipient_name,
-                           req.recipient_email, pdf_path, pdf_name)
-    except smtplib.SMTPAuthenticationError as exc:
-        raise JobError("SMTP authentication failed. Check SMTP_USER and SMTP_PASS.") from exc
-    except smtplib.SMTPRecipientsRefused as exc:
-        raise JobError("Recipient address was rejected by the mail server.") from exc
+        mailer.send_email(to_name=req.recipient_name, to_email=req.recipient_email,
+                          subject=subject, html=html_body,
+                          attachment=pdf_path, attachment_name=pdf_name)
     except Exception as exc:
         log.exception("Sending a share email failed")
         raise JobError(f"Failed to send email: {exc}") from exc
@@ -616,18 +601,22 @@ def _run_share_favorites(job_id: str, req: ShareFavoritesRequest, records: list[
 # result is {"recipient": ..., "count": ...}.
 
 @router.post("/property", response_model=JobStarted)
-def share_property(req: SharePropertyRequest, background_tasks: BackgroundTasks):
+def share_property(req: SharePropertyRequest, background_tasks: BackgroundTasks,
+                   user: Optional[str] = Depends(current_user)):
     _check_can_send(req.recipient_email)
     [record] = _load_deals([req.sale_id])
-    job_id = create_job()
+    _check_rate_limit(user)
+    job_id = create_job(kind=SHARE_JOB_KIND, created_by=user)
     background_tasks.add_task(run_job, job_id, "Share failed", _run_share_property, req, record)
     return JobStarted(job_id=job_id)
 
 
 @router.post("/favorites", response_model=JobStarted)
-def share_favorites(req: ShareFavoritesRequest, background_tasks: BackgroundTasks):
+def share_favorites(req: ShareFavoritesRequest, background_tasks: BackgroundTasks,
+                    user: Optional[str] = Depends(current_user)):
     _check_can_send(req.recipient_email)
     records = _load_deals(req.sale_ids)
-    job_id = create_job()
+    _check_rate_limit(user)
+    job_id = create_job(kind=SHARE_JOB_KIND, created_by=user)
     background_tasks.add_task(run_job, job_id, "Share failed", _run_share_favorites, req, records)
     return JobStarted(job_id=job_id)

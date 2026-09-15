@@ -72,10 +72,12 @@ class ClearDealsResult(BaseModel):
 
 
 class ShareRequest(BaseModel):
-    recipient_name:  str
-    recipient_email: str
-    sender_name:     Optional[str] = None
-    note:            Optional[str] = None
+    # Length limits bound what a request can put into an email sent from the
+    # business domain. 320 characters is the longest valid email address.
+    recipient_name:  str           = Field(min_length=1, max_length=100)
+    recipient_email: str           = Field(max_length=320)
+    sender_name:     Optional[str] = Field(None, max_length=100)
+    note:            Optional[str] = Field(None, max_length=2000)
 
 
 # Shares name deals by sale_id, and the server loads them from property_deals.
