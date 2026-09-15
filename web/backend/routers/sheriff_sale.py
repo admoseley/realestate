@@ -1,5 +1,4 @@
 import json
-import os
 import shutil
 import sys
 import tempfile
@@ -17,10 +16,9 @@ from sheriff_sale_analyzer import pdf_to_text, parse_sheriff_text, enrich_proper
 from database import Report, SessionLocal, utcnow
 from jobs import create_job, update_job, fail_job
 from deal_utils import upsert_deal, pdf_hash as compute_pdf_hash
+from storage import get_storage
 
-router      = APIRouter(prefix="/api/sheriff-sale", tags=["sheriff-sale"])
-REPORTS_DIR = Path(os.getenv("REPORTS_DIR", str(Path(__file__).parent.parent / "reports")))
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+router = APIRouter(prefix="/api/sheriff-sale", tags=["sheriff-sale"])
 
 UPLOAD_FILENAME = "upload.pdf"
 
@@ -116,12 +114,14 @@ def _run_pipeline(job_id: str, workdir: str, enrich: bool):
             db.add(report)
             db.commit()   # report.id stays loaded (expire_on_commit=False), so no refresh query
 
-            # Step 7 — generate PDF (no transaction is open while it renders)
+            # Step 7 — generate the PDF in the job's working directory, then
+            # move it to durable report storage (no transaction is open while
+            # it renders or uploads).
             update_job(job_id, "running", 80, "Generating branded PDF report…",
                        report_id=report.id)
-            ts      = now.strftime("%m%d%Y-%H%M%S")
-            pdf_out = REPORTS_DIR / f"SheriffSale_{report.id}_{ts}.pdf"
-            n_deals = len(deals)
+            ts       = now.strftime("%m%d%Y-%H%M%S")
+            pdf_file = work / f"SheriffSale_{report.id}_{ts}.pdf"
+            n_deals  = len(deals)
 
             def _pdf_progress(current, total, phase):
                 if phase == "property":
@@ -137,8 +137,8 @@ def _run_pipeline(job_id: str, workdir: str, enrich: bool):
                     update_job(job_id, "running", 96, "Saving PDF file…",
                                report_id=report.id)
 
-            build_and_save_pdf(deals, pdf_out, progress_cb=_pdf_progress)
-            report.pdf_path = str(pdf_out)
+            build_and_save_pdf(deals, pdf_file, progress_cb=_pdf_progress)
+            report.pdf_path = get_storage().save_pdf(pdf_file)
             db.commit()
 
             # Step 8 — upsert individual deal rows into property_deals

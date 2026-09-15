@@ -17,6 +17,7 @@ _TMP = Path(tempfile.mkdtemp(prefix="realestate-tests-"))
 os.environ["DB_PATH"] = str(_TMP / "test.db")
 os.environ["REPORTS_DIR"] = str(_TMP / "reports")
 os.environ.pop("AZURE_SQL_CONNECTION_STRING", None)
+os.environ.pop("REPORTS_BLOB_URL", None)
 
 
 @pytest.fixture(scope="session")
