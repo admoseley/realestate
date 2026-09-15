@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { sheriffSaleUpload, pollJob, getReport, pdfUrl, debugAnalyzePdf } from "../api/client";
+import {
+  sheriffSaleUpload, waitForJob, JobFailedError, isAbortError, getReport, pdfUrl, debugAnalyzePdf,
+} from "../api/client";
 import ProgressStepper from "../components/ProgressStepper";
 
 const DebugButton = ({ debugging, setDebugging }) => (
@@ -31,38 +33,32 @@ export default function SheriffSale() {
   const [step,   setStep]   = useState("idle"); // idle | processing | results
   const [job,    setJob]    = useState(null);
   const [report, setReport] = useState(null);
-  const pollRef = useRef(null);
+  // Aborts the current run's polling on reset or unmount.
+  const abortRef = useRef(null);
 
   const startAnalysis = async () => {
+    const controller = new AbortController();
+    abortRef.current = controller;
     setStep("processing");
     setJob({ status: "pending", percent: 0, message: "Queued…" });
     try {
-      const resp = await sheriffSaleUpload(file, enrich);
-      pollRef.current = setInterval(() => tick(resp.job_id), 2000);
+      const { job_id } = await sheriffSaleUpload(file, enrich);
+      const done = await waitForJob(job_id, { signal: controller.signal, onUpdate: setJob });
+      const r = await getReport(done.report_id);
+      if (controller.signal.aborted) return;
+      setReport(r);
+      setStep("results");
     } catch (e) {
-      setJob({ status: "error", percent: 0, message: e.response?.data?.detail || "Failed to start job" });
+      // Aborted: the user moved on. Failed job: onUpdate already shows its error.
+      if (isAbortError(e) || controller.signal.aborted || e instanceof JobFailedError) return;
+      setJob({ status: "error", percent: 0, message: e.response?.data?.detail || e.message || "Failed to start job" });
     }
   };
 
-  const tick = async (jobId) => {
-    try {
-      const j = await pollJob(jobId);
-      setJob(j);
-      if (j.status === "done") {
-        clearInterval(pollRef.current);
-        const r = await getReport(j.report_id);
-        setReport(r);
-        setStep("results");
-      } else if (j.status === "error") {
-        clearInterval(pollRef.current);
-      }
-    } catch { /* poll error — transient, ignore */ }
-  };
-
-  useEffect(() => () => clearInterval(pollRef.current), []);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const reset = () => {
-    clearInterval(pollRef.current);
+    abortRef.current?.abort();
     setStep("idle");
     setJob(null);
     setReport(null);

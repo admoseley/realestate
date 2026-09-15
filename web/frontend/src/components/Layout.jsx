@@ -1,4 +1,6 @@
+import { useEffect, useSyncExternalStore } from "react";
 import { Outlet, NavLink } from "react-router-dom";
+import { isDatabaseWaking, subscribeDatabaseWaking, warmUpDatabase } from "../api/client";
 
 const NAV = [
   { to: "/",             label: "Dashboard" },
@@ -8,6 +10,12 @@ const NAV = [
 ];
 
 export default function Layout() {
+  const databaseWaking = useSyncExternalStore(subscribeDatabaseWaking, isDatabaseWaking);
+
+  // Layout wraps every page, so this runs once per app load: it starts a
+  // paused database resuming before the page's own requests need it.
+  useEffect(() => { warmUpDatabase(); }, []);
+
   return (
     <div className="flex h-screen overflow-hidden bg-brand-gray">
       {/* Sidebar */}
@@ -46,6 +54,13 @@ export default function Layout() {
             Real Estate Investment Analyzer
           </span>
         </header>
+
+        {databaseWaking && (
+          <div role="status" className="bg-amber-50 border-b border-amber-200 text-amber-800 text-sm px-6 py-2 flex items-center gap-2 flex-shrink-0">
+            <span className="inline-block w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
+            Waking up the database… this can take up to a minute after a quiet period.
+          </div>
+        )}
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
