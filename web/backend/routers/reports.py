@@ -1,12 +1,12 @@
 import json
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from database import Report, get_db
 from models import ReportDetail, ReportSummary
+from storage import ReportNotFound, get_storage, key_for
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -24,7 +24,10 @@ def _to_summary(r: Report) -> ReportSummary:
         watch_count    = r.watch_count,
         perfect_count  = r.perfect_count,
         avoid_count    = r.avoid_count,
-        has_pdf        = bool(r.pdf_path and Path(r.pdf_path).exists()),
+        # pdf_path is only set after the PDF has been saved, and storage is now
+        # durable. Checking the file itself here would cost one storage request
+        # per report on every listing.
+        has_pdf        = bool(r.pdf_path),
     )
 
 
@@ -48,12 +51,16 @@ def download_pdf(report_id: int, db: Session = Depends(get_db)):
     r = db.get(Report, report_id)
     if not r:
         raise HTTPException(404, "Report not found")
-    if not r.pdf_path or not Path(r.pdf_path).exists():
+    if not r.pdf_path:
         raise HTTPException(404, "PDF not available")
-    return FileResponse(
-        r.pdf_path,
-        media_type  = "application/pdf",
-        filename    = Path(r.pdf_path).name,
+    try:
+        chunks = get_storage().stream(r.pdf_path)
+    except ReportNotFound:
+        raise HTTPException(404, "PDF not available")
+    return StreamingResponse(
+        chunks,
+        media_type = "application/pdf",
+        headers    = {"Content-Disposition": f'attachment; filename="{key_for(r.pdf_path)}"'},
     )
 
 
@@ -62,9 +69,10 @@ def delete_report(report_id: int, db: Session = Depends(get_db)):
     r = db.get(Report, report_id)
     if not r:
         raise HTTPException(404, "Report not found")
-    if r.pdf_path:
-        p = Path(r.pdf_path)
-        if p.exists():
-            p.unlink()
+    pdf_key = r.pdf_path
     db.delete(r)
     db.commit()
+    # Remove the PDF only after the row is gone: if this fails, the worst case
+    # is an orphaned file rather than a report whose PDF has vanished.
+    if pdf_key:
+        get_storage().delete(pdf_key)

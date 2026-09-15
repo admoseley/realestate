@@ -50,9 +50,10 @@ Configuration is read from the environment or `web/backend/.env` (git-ignored â€
 | `FROM_EMAIL` / `FROM_NAME` | Sender identity for shared reports |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins (defaults to local Vite ports) |
 | `DB_PATH` | SQLite database file for local development (default `reports.db`) |
-| `REPORTS_DIR` | Where generated PDFs are written |
+| `REPORTS_DIR` | Local folder for report PDFs when Blob Storage isn't configured (default `web/backend/reports`) |
+| `REPORTS_BLOB_URL` | Store report PDFs in Azure Blob Storage: the container URL, e.g. `https://<account>.blob.core.windows.net/reports`. Authenticates with the managed identity (no storage keys) |
 | `AZURE_SQL_CONNECTION_STRING` | Use Azure SQL instead of SQLite. An ODBC connection string **without credentials** (no `UID`, `PWD`, or `Authentication`) â€” the app signs in with a Microsoft Entra token |
-| `AZURE_CLIENT_ID` | Client ID of the user-assigned managed identity used for Azure SQL. Leave unset locally to use your `az login` session |
+| `AZURE_CLIENT_ID` | Client ID of the user-assigned managed identity used for Azure SQL and Blob Storage. Leave unset locally to use your `az login` session |
 | `RUN_MIGRATIONS` | Apply database migrations at startup (default `true`) |
 
 ### Database and migrations

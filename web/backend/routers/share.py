@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import smtplib
+import tempfile
 from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
@@ -16,9 +17,6 @@ from generate_pdf_report import build_and_save_pdf
 from models import SharePropertyRequest, ShareFavoritesRequest
 
 router = APIRouter(prefix="/api/share", tags=["share"])
-
-REPORTS_DIR = Path(os.getenv("REPORTS_DIR", str(Path(__file__).parent.parent / "reports")))
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -504,9 +502,11 @@ def share_property(req: SharePropertyRequest):
     ts        = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     safe_addr = "".join(c if c.isalnum() else "_" for c in str(d.get("address", "property"))[:30])
     pdf_name  = f"Share_{safe_addr}_{ts}.pdf"
-    pdf_path  = REPORTS_DIR / pdf_name
-
-    try:
+    # The PDF only exists to be attached, so it's built in a per-request
+    # temporary directory that's removed afterwards. It used to be written to
+    # the shared reports folder, where two shares in the same second collided.
+    with tempfile.TemporaryDirectory(prefix="share-") as workdir:
+        pdf_path = Path(workdir) / pdf_name
         build_and_save_pdf(
             [deal_obj],
             pdf_path,
@@ -532,12 +532,6 @@ def share_property(req: SharePropertyRequest):
             raise HTTPException(400, "Recipient address was rejected by the mail server.")
         except Exception as exc:
             raise HTTPException(500, f"Failed to send email: {exc}")
-
-    finally:
-        try:
-            pdf_path.unlink(missing_ok=True)
-        except Exception:
-            pass
 
     return {"status": "sent", "recipient": req.recipient_email}
 
@@ -588,9 +582,10 @@ def share_favorites(req: ShareFavoritesRequest):
 
     ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     pdf_name = f"SavedProperties_{ts}.pdf"
-    pdf_path = REPORTS_DIR / pdf_name
 
-    try:
+    # Built in a per-request temporary directory, like share_property above.
+    with tempfile.TemporaryDirectory(prefix="share-") as workdir:
+        pdf_path = Path(workdir) / pdf_name
         build_and_save_pdf(
             deal_objects,
             pdf_path,
@@ -615,11 +610,5 @@ def share_favorites(req: ShareFavoritesRequest):
             raise HTTPException(400, "Recipient address was rejected by the mail server.")
         except Exception as exc:
             raise HTTPException(500, f"Failed to send email: {exc}")
-
-    finally:
-        try:
-            pdf_path.unlink(missing_ok=True)
-        except Exception:
-            pass
 
     return {"status": "sent", "recipient": req.recipient_email, "count": len(deal_objects)}

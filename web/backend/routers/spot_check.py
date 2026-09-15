@@ -1,8 +1,8 @@
 import json
-import os
 import sys
+import tempfile
+import uuid
 from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends
@@ -14,13 +14,12 @@ from investment_analyzer import Deal, analyze
 from generate_pdf_report import build_and_save_pdf
 from spot_check import geocode_nominatim, parse_municipality, lookup_property
 
-from database import Report, get_db
+from database import Report, get_db, utcnow
 from models import SpotCheckRequest, SpotCheckResponse
 from deal_utils import upsert_deal, spot_sale_id
+from storage import get_storage
 
-router      = APIRouter(prefix="/api/spot-check", tags=["spot-check"])
-REPORTS_DIR = Path(os.getenv("REPORTS_DIR", str(Path(__file__).parent.parent / "reports")))
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+router = APIRouter(prefix="/api/spot-check", tags=["spot-check"])
 
 
 @router.post("", response_model=SpotCheckResponse)
@@ -69,25 +68,29 @@ def run_spot_check(req: SpotCheckRequest, db: Session = Depends(get_db)):
     coords = geocode_nominatim(address)
     geocache_extra = {"SPOT": coords} if coords else {}
 
-    # Build PDF
-    ts      = datetime.utcnow().strftime("%m%d%Y-%H%M%S")
-    pdf_out = REPORTS_DIR / f"SpotCheck_{ts}.pdf"
+    # Build the PDF in a throwaway directory, then move it into report storage.
+    # The name gets a random suffix: two spot checks in the same second used to
+    # produce the same file name, and storage overwrites on save.
+    now        = utcnow()
     muni_label = municipality or "Allegheny County"
-    build_and_save_pdf(
-        [deal],
-        pdf_out,
-        geocache_extra = geocache_extra,
-        report_title   = "Estella Wilson Properties LLC — Property Spot Check",
-        footer_label   = "Property Spot Check",
-        subtitle       = f"{muni_label} · {datetime.utcnow().strftime('%B %d, %Y')}",
-        cover_note     = f"Listed Price: ${req.price:,.0f}",
-    )
+    with tempfile.TemporaryDirectory(prefix="spot-check-") as workdir:
+        pdf_file = Path(workdir) / f"SpotCheck_{now.strftime('%m%d%Y-%H%M%S')}_{uuid.uuid4().hex[:8]}.pdf"
+        build_and_save_pdf(
+            [deal],
+            pdf_file,
+            geocache_extra = geocache_extra,
+            report_title   = "Estella Wilson Properties LLC — Property Spot Check",
+            footer_label   = "Property Spot Check",
+            subtitle       = f"{muni_label} · {now.strftime('%B %d, %Y')}",
+            cover_note     = f"Listed Price: ${req.price:,.0f}",
+        )
+        pdf_key = get_storage().save_pdf(pdf_file)
 
     # Save to DB
     deal_dict = asdict(deal)
     report = Report(
         type           = "spot_check",
-        created_at     = datetime.utcnow(),
+        created_at     = now,
         title          = address,
         property_count = 1,
         buy_count      = 1 if deal.verdict == "BUY" else 0,
@@ -96,12 +99,11 @@ def run_spot_check(req: SpotCheckRequest, db: Session = Depends(get_db)):
         watch_count    = 1 if deal.verdict == "WATCH" else 0,
         perfect_count  = 1 if deal.perfect_pass_rating == "PERFECT" else 0,
         avoid_count    = 1 if deal.perfect_pass_rating == "AVOID" else 0,
-        pdf_path       = str(pdf_out),
+        pdf_path       = pdf_key,
         deals_json     = json.dumps([deal_dict], default=str),
     )
     db.add(report)
-    db.commit()
-    db.refresh(report)
+    db.commit()   # report.id stays loaded (expire_on_commit=False), so no refresh query
 
     # Persist to unified deal list
     sid = spot_sale_id(address, req.price)

@@ -13,5 +13,7 @@ resend>=2.0.0
 # Azure SQL: ODBC Driver 18 via pyodbc, authenticated with a Microsoft Entra token
 pyodbc==5.2.0
 azure-identity==1.19.0
+# Report PDFs in Azure Blob Storage (managed identity)
+azure-storage-blob==12.30.1
 # Schema migrations
 alembic==1.14.0
