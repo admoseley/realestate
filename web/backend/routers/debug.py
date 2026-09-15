@@ -15,7 +15,7 @@ from fastapi.responses import PlainTextResponse
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from sheriff_sale_analyzer import pdf_to_text, parse_sheriff_text, enrich_property, fetch_wprdc_parcel, fetch_ac_assessment, fetch_ac_search
+from sheriff_sale_analyzer import parse_sheriff_text, enrich_property, fetch_wprdc_parcel, fetch_ac_assessment, fetch_ac_search
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 
@@ -68,7 +68,7 @@ async def debug_analyze_pdf(file: UploadFile = File(...)):
             raw_text = SHERIFF_TXT_CACHE.read_text(errors="replace")
             txt_path = SHERIFF_TXT_CACHE
             log(f"Text size : {len(raw_text):,} chars")
-            log(f"\n--- First 2000 characters of extracted text ---")
+            log("\n--- First 2000 characters of extracted text ---")
             log(raw_text[:2000])
             log("--- End preview ---")
         else:
@@ -154,7 +154,7 @@ async def debug_analyze_pdf(file: UploadFile = File(...)):
                 log(f"         EXCEPTION: {traceback.format_exc().splitlines()[-1]}")
 
             # Now run the full enrich_property
-            log(f"       → Running enrich_property()…")
+            log("       → Running enrich_property()…")
             try:
                 enrich_property(prop)
                 log(f"       fair_market    : {prop.fair_market!r}")
@@ -163,7 +163,7 @@ async def debug_analyze_pdf(file: UploadFile = File(...)):
                 log(f"       sqft           : {prop.sqft!r}")
                 log(f"       bedrooms       : {prop.bedrooms!r}")
             except Exception:
-                log(f"       ERROR enriching:")
+                log("       ERROR enriching:")
                 log("       " + traceback.format_exc().replace("\n", "\n       "))
 
     # ── Step 5: deal eligibility ──────────────────────────────────────────────

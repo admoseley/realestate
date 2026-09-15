@@ -24,8 +24,6 @@ Usage examples
 import argparse
 import json
 import re
-import sys
-import time
 import urllib.request
 import urllib.parse
 from datetime import datetime
@@ -98,7 +96,7 @@ def lookup_property(address: str, municipality: str, parcel: str = "") -> dict:
         if result:
             print("  ✔ WPRDC returned data.")
             return result
-    print(f"  Searching Allegheny County portal by address…")
+    print("  Searching Allegheny County portal by address…")
     result = fetch_ac_search(address, municipality)
     if result:
         print("  ✔ AC portal returned data.")
@@ -271,7 +269,7 @@ def main():
         "All analysis uses cash-purchase methodology per the Perfect vs Pass investor framework."
     )
 
-    print(f"\n  Building PDF…")
+    print("\n  Building PDF…")
     build_and_save_pdf(
         [deal],
         output_path,

@@ -4,7 +4,6 @@ Estella Wilson Properties LLC — Sheriff Sale PDF Report Generator
 Produces a professional, branded PDF from investment_analyzer deal data.
 """
 
-import json
 import math
 import time
 import urllib.request
@@ -16,22 +15,18 @@ from datetime import date, datetime
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.platypus import (
     BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer,
-    Table, TableStyle, HRFlowable, Image, KeepTogether, PageBreak,
+    Table, TableStyle, HRFlowable, Image, PageBreak,
 )
 from reportlab.graphics.shapes import (
-    Drawing, Rect, Circle, String, Line, Wedge, Polygon,
+    Drawing, Rect, Circle, String, Line, Wedge,
 )
-from reportlab.graphics.charts.barcharts import VerticalBarChart
-from reportlab.graphics import renderPDF
 from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 
-from investment_analyzer import Deal, analyze, load_deals_from_json
+from investment_analyzer import Deal, load_deals_from_json
 
 # ─── Brand Colors (from Estella Wilson logo) ─────────────────────────────────
 
@@ -106,7 +101,7 @@ def fetch_map_image(lat: float, lon: float) -> BytesIO | None:
     Aborts early if the total fetch time exceeds _MAP_TOTAL_BUDGET seconds.
     """
     try:
-        from PIL import Image as PILImage, ImageDraw, ImageFont
+        from PIL import Image as PILImage, ImageDraw
         zoom = 17
         cx, cy = _deg2tile(lat, lon, zoom)
         tile_size = 256
@@ -142,7 +137,7 @@ def fetch_map_image(lat: float, lon: float) -> BytesIO | None:
         composite.save(out, format="PNG")
         out.seek(0)
         return out
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -186,7 +181,6 @@ def pct(v: float) -> str:
 # ─── Reusable paragraph styles ────────────────────────────────────────────────
 
 def make_styles():
-    base = getSampleStyleSheet()
     S = {}
     common = dict(fontName="Helvetica", textColor=CHARCOAL)
 
@@ -288,7 +282,9 @@ def rating_badge(rating: str, verdict: str) -> Drawing:
     w, h = 1.6 * inch, 0.38 * inch
     d = Drawing(w, h)
     vc = _verdict_color(verdict)
-    rc = _rating_color(rating)
+    # The rating color is computed but the badge only draws the verdict, so the
+    # rating never appears. Kept (not deleted) as a pointer for the fix — see #14.
+    rc = _rating_color(rating)  # noqa: F841
     d.add(Rect(0, 0, w, h, rx=6, ry=6, fillColor=vc, strokeColor=None))
     label = {"BUY": "✔ BUY", "NO BUY": "✘ NO BUY",
              "CONSIDER": "? CONSIDER", "WATCH": "⏳ WATCH"}.get(verdict, verdict)

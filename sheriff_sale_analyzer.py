@@ -6,13 +6,12 @@ Priority: Free & Clear (F&C) properties with the best bid-to-value ratios.
 """
 
 import re
-import sys
 import json
 import time
 import subprocess
 import urllib.request
 import urllib.parse
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import Optional
 from pathlib import Path
 

@@ -15,7 +15,6 @@ Evaluates each Free & Clear property using professional investment frameworks:
 
 import json
 from dataclasses import dataclass, field
-from typing import Optional
 from pathlib import Path
 
 try:
