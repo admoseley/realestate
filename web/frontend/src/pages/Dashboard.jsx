@@ -4,6 +4,7 @@ import PropertyCard from "../components/PropertyCard";
 import VerdictBadge from "../components/VerdictBadge";
 import ShareModal from "../components/ShareModal";
 import ShareFavoritesModal from "../components/ShareFavoritesModal";
+import { useAuth } from "../auth/auth";
 
 const VERDICTS = ["BUY", "CONSIDER", "WATCH", "NO BUY"];
 
@@ -33,6 +34,8 @@ const ThumbDown = ({ active }) => (
 );
 
 export default function Dashboard() {
+  // Clearing records is admin-only at the edge (DELETE /api/deals requires admin).
+  const { isAdmin } = useAuth();
   const [deals,       setDeals]       = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [filter,      setFilter]      = useState("ALL");
@@ -197,7 +200,7 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-brand-charcoal">Properties</h1>
           <p className="text-sm text-gray-500 mt-1">All active deal records — sheriff sale + spot checks</p>
         </div>
-        {deals.length > 0 && (
+        {isAdmin && deals.length > 0 && (
           <button
             onClick={() => setShowClearConfirm(true)}
             className="text-sm text-gray-400 hover:text-red-500 border border-brand-line hover:border-red-300 rounded-lg px-4 py-2 transition-colors"

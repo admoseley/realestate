@@ -4,6 +4,7 @@ import {
   sheriffSaleUpload, waitForJob, JobFailedError, isAbortError, getReport, pdfUrl, debugAnalyzePdf,
 } from "../api/client";
 import ProgressStepper from "../components/ProgressStepper";
+import { useAuth } from "../auth/auth";
 
 // Mirrors the API's upload limit (web/backend/uploads.py). Checking here too
 // gives a clear message before uploading; Static Web Apps rejects anything
@@ -37,6 +38,8 @@ const DebugButton = ({ debugging, setDebugging }) => (
 
 export default function SheriffSale() {
   const navigate = useNavigate();
+  // The debug report is admin-only at the edge (/api/debug/* requires admin).
+  const { isAdmin } = useAuth();
   const [file,      setFile]      = useState(null);
   const [enrich,    setEnrich]    = useState(true);
   const [debugging, setDebugging] = useState(false);
@@ -160,7 +163,7 @@ export default function SheriffSale() {
         <div className="bg-white rounded-xl border border-brand-line p-8 space-y-6">
           <h2 className="text-lg font-semibold text-brand-charcoal">Analyzing sheriff sale…</h2>
           <ProgressStepper percent={job.percent} message={job.message} status={job.status} />
-          {job.status === "error" && (
+          {isAdmin && job.status === "error" && (
             <div className="pt-2 border-t border-brand-line flex items-center gap-3">
               <span className="text-xs text-gray-500">Upload the same PDF to get a detailed diagnostic:</span>
               <DebugButton debugging={debugging} setDebugging={setDebugging} />

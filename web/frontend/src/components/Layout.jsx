@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { Outlet, NavLink } from "react-router-dom";
 import { isDatabaseWaking, subscribeDatabaseWaking, warmUpDatabase } from "../api/client";
+import { LOGOUT_URL, useAuth } from "../auth/auth";
 
 const NAV = [
   { to: "/",             label: "Dashboard" },
@@ -11,6 +12,7 @@ const NAV = [
 
 export default function Layout() {
   const databaseWaking = useSyncExternalStore(subscribeDatabaseWaking, isDatabaseWaking);
+  const { status, user, isAdmin } = useAuth();
 
   // Layout wraps every page, so this runs once per app load: it starts a
   // paused database resuming before the page's own requests need it.
@@ -49,10 +51,29 @@ export default function Layout() {
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="h-14 bg-brand-orange flex items-center px-6 flex-shrink-0">
-          <span className="text-white font-bold text-lg tracking-wide">
+        <header className="h-14 bg-brand-orange flex items-center justify-between gap-4 px-6 flex-shrink-0">
+          <span className="text-white font-bold text-lg tracking-wide truncate">
             Real Estate Investment Analyzer
           </span>
+          {/* Who's signed in (Static Web Apps). Without sign-in, e.g. in local development, there's no Sign out. */}
+          {user && (
+            <div className="flex items-center gap-3 text-sm text-white/90 min-w-0">
+              <span className="truncate" title={user}>
+                {status === "local" ? user : <>Signed in as <span className="font-semibold">{user}</span></>}
+                {isAdmin && status !== "local" && (
+                  <span className="ml-2 rounded bg-white/20 px-1.5 py-0.5 text-xs font-semibold">admin</span>
+                )}
+              </span>
+              {status !== "local" && (
+                <a
+                  href={LOGOUT_URL}
+                  className="shrink-0 rounded-lg border border-white/40 px-3 py-1 font-semibold text-white hover:bg-white/10 transition-colors"
+                >
+                  Sign out
+                </a>
+              )}
+            </div>
+          )}
         </header>
 
         {databaseWaking && (

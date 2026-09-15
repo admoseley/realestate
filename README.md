@@ -120,9 +120,39 @@ A `503` without `Retry-After` is treated as a real error.
 
 ### Security
 
-Sign-in and role checks happen at the edge. Static Web Apps admits only
-invited users (`staticwebapp.config.json`, tracked in #9), and the API is
-reachable only through its proxy. The API does no access control of its own.
+Sign-in and role checks happen at the edge, in Static Web Apps
+([`web/frontend/public/staticwebapp.config.json`](web/frontend/public/staticwebapp.config.json)):
+
+- **Who can sign in.** Only Microsoft accounts can sign in (GitHub and X
+  sign-in are blocked), and only **invited** users can use the app.
+  Signed-out visitors go to Microsoft sign-in.
+- **Users without a role.** Any signed-in Microsoft account can load the
+  app's static files, which hold no data; the code is public on GitHub anyway.
+  For users without a role, the app then shows an "access pending" message,
+  and the API refuses them. The static files don't also require a role:
+  when they did, the Static Web Apps emulator sent such users straight back
+  to sign-in instead of showing an error page.
+- **Roles.** An **analyst** can use the whole app. An **admin** can also
+  delete deals and reports and run the debug report (`DELETE /api/*` and
+  `/api/debug/*`).
+- **Where access is enforced.** The API is reachable only through the Static
+  Web App and does no access control of its own. The frontend reads
+  `/.auth/me` to show who's signed in and to hide admin-only actions, but
+  only the edge rules enforce access.
+- **Security headers.** Responses carry them, including a
+  Content-Security-Policy that allows only the app's own scripts, styles, and
+  API calls.
+
+To give someone access, create an invitation and send them its link. Use role
+`analyst`, or `analyst,admin` for an admin. Static Web Apps allows up to 25
+invited users.
+
+```bash
+az staticwebapp users invite -n swa-realestate -g rg-realestate-prod --authentication-provider AAD --user-details someone@example.com --roles analyst --domain realestate-analysis.app.estellawilson.com --invitation-expiration-in-hours 168
+```
+
+The Vite dev server has no sign-in, so locally the app runs as an admin.
+
 Inside the API:
 
 - **Share emails** contain only stored deal data, looked up by `sale_id`. Every

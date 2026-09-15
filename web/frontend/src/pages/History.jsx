@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { listReports, getReport, deleteReport, pdfUrl } from "../api/client";
 import PropertyCard from "../components/PropertyCard";
+import { useAuth } from "../auth/auth";
 
 const PAGE_SIZE = 10;
 
@@ -10,6 +11,9 @@ export default function History() {
   const [expanded, setExpanded] = useState(null);
   const [detail,   setDetail]   = useState({});
   const [loading,  setLoading]  = useState(true);
+  // Deleting is admin-only at the edge (DELETE /api/* requires the admin role),
+  // so analysts don't get the column at all.
+  const { isAdmin } = useAuth();
 
   const load = useCallback(() => {
     listReports(page * PAGE_SIZE, PAGE_SIZE)
@@ -64,7 +68,7 @@ export default function History() {
                   <th className="px-4 py-2 text-center">BUY</th>
                   <th className="px-4 py-2 text-center">PERFECT</th>
                   <th className="px-4 py-2 text-center">PDF</th>
-                  <th className="px-4 py-2 text-center">Del</th>
+                  {isAdmin && <th className="px-4 py-2 text-center">Del</th>}
                 </tr>
               </thead>
               <tbody>
@@ -99,17 +103,19 @@ export default function History() {
                           </a>
                         )}
                       </td>
-                      <td className="px-4 py-2 text-center">
-                        <button onClick={(e) => del(r.id, e)}
-                          className="text-red-400 hover:text-red-600 text-xs font-semibold">
-                          ✕
-                        </button>
-                      </td>
+                      {isAdmin && (
+                        <td className="px-4 py-2 text-center">
+                          <button onClick={(e) => del(r.id, e)}
+                            className="text-red-400 hover:text-red-600 text-xs font-semibold">
+                            ✕
+                          </button>
+                        </td>
+                      )}
                     </tr>
 
                     {expanded === r.id && detail[r.id] && (
                       <tr key={`exp-${r.id}`} className="border-t border-brand-line bg-brand-gray/20">
-                        <td colSpan={8} className="p-4">
+                        <td colSpan={isAdmin ? 8 : 7} className="p-4">
                           <div className="space-y-4">
                             {detail[r.id].deals.map((d, i) => (
                               <PropertyCard key={i} deal={d} rank={i + 1} />
