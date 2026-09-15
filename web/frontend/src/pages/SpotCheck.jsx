@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { runSpotCheck, pdfUrl } from "../api/client";
+import { runSpotCheck, waitForJob, JobFailedError, isAbortError, pdfUrl, API_BASE } from "../api/client";
 import PropertyCard from "../components/PropertyCard";
 
 const Field = ({ label, type = "text", placeholder = "", value, onChange }) => (
@@ -26,14 +26,22 @@ export default function SpotCheck() {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
   const [result,  setResult]  = useState(null);
+  const [progress, setProgress] = useState(null);   // latest job status while analyzing
+  const abortRef = useRef(null);
+
+  // Stop polling if the user leaves the page mid-analysis.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
 
   const submit = async (e) => {
     e.preventDefault();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     setResult(null);
+    setProgress(null);
     try {
       const payload = {
         address:      form.address,
@@ -47,16 +55,21 @@ export default function SpotCheck() {
         municipality: form.municipality || null,
         no_lookup:    form.no_lookup,
       };
-      const data = await runSpotCheck(payload);
-      setResult(data);
+      // The analysis runs as a background job; its result arrives by polling.
+      const { job_id } = await runSpotCheck(payload);
+      const job = await waitForJob(job_id, { signal: controller.signal, onUpdate: setProgress });
+      setResult({ report_id: job.report_id, ...job.result });
     } catch (err) {
-      if (!err.response) {
+      if (isAbortError(err)) return;
+      if (err instanceof JobFailedError) {
+        setError({ type: "Analysis Failed", status: null, detail: err.message, hint: null });
+      } else if (!err.response) {
         // Network error — no response from server at all
         setError({
           type: "Network Error",
           status: null,
           detail: err.message,
-          hint: `Could not reach the API. Check that VITE_API_URL is set correctly in Netlify. Current target: ${import.meta.env.VITE_API_URL || "/api (proxy — no VITE_API_URL set)"}`,
+          hint: `Could not reach the analysis API (${API_BASE}). Check your connection and try again.`,
         });
       } else {
         setError({
@@ -67,7 +80,7 @@ export default function SpotCheck() {
         });
       }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
@@ -145,6 +158,15 @@ export default function SpotCheck() {
           {loading && <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
           {loading ? "Analyzing…" : "Analyze Property"}
         </button>
+
+        {loading && progress && (
+          <div className="space-y-1 max-w-md" role="status">
+            <div className="h-2 bg-brand-line rounded-full overflow-hidden">
+              <div className="h-full bg-brand-orange transition-all duration-500" style={{ width: `${progress.percent}%` }} />
+            </div>
+            <p className="text-xs text-gray-500">{progress.message}</p>
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-4 text-sm space-y-2">

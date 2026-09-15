@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { shareProperty } from "../api/client";
+import { useEffect, useRef, useState } from "react";
+import { shareProperty, waitForJob, describeError, isAbortError } from "../api/client";
 
 export default function ShareModal({ deal, onClose }) {
   const [recipientName,  setRecipientName]  = useState("");
@@ -8,31 +8,35 @@ export default function ShareModal({ deal, onClose }) {
   const [note,           setNote]           = useState("");
   const [status,         setStatus]         = useState("idle"); // idle | sending | success | error
   const [errorMsg,       setErrorMsg]       = useState("");
+  const [progress,       setProgress]       = useState("");     // job message while sending
+  const abortRef = useRef(null);
+
+  // Closing the modal stops polling. The email job itself carries on server-side.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const canSend = recipientName.trim() && recipientEmail.trim();
 
   const handleSend = async () => {
     if (!canSend) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setStatus("sending");
     setErrorMsg("");
+    setProgress("");
     try {
-      await shareProperty({
+      // Only the sale_id is sent; the server emails the analysis it has stored.
+      const { job_id } = await shareProperty({
         recipient_name:  recipientName.trim(),
         recipient_email: recipientEmail.trim(),
         sender_name:     senderName.trim() || undefined,
         note:            note.trim() || undefined,
-        deal,
+        sale_id:         deal.sale_id,
       });
+      await waitForJob(job_id, { signal: controller.signal, onUpdate: job => setProgress(job.message) });
       setStatus("success");
     } catch (err) {
-      const status = err.response?.status;
-      const detail = err.response?.data?.detail;
-      const msg = detail
-        ? `Error ${status}: ${detail}`
-        : err.message
-        ? `Error: ${err.message}`
-        : "Failed to send. Please try again.";
-      setErrorMsg(msg);
+      if (isAbortError(err)) return;
+      setErrorMsg(describeError(err, "Failed to send. Please try again."));
       setStatus("error");
     }
   };
@@ -138,6 +142,10 @@ export default function ShareModal({ deal, onClose }) {
                 />
               </div>
             </div>
+
+            {status === "sending" && progress && (
+              <p className="text-xs text-gray-500" role="status">{progress}</p>
+            )}
 
             {status === "error" && (
               <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">

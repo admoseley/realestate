@@ -5,7 +5,7 @@ import jobs
 def test_job_lifecycle(migrated_db):
     job_id = jobs.create_job()
     assert jobs.get_job(job_id) == {
-        "status": "pending", "percent": 0, "message": "Queued…", "report_id": None,
+        "status": "pending", "percent": 0, "message": "Queued…", "report_id": None, "result": None,
     }
 
     jobs.update_job(job_id, "running", 40, "Working", report_id=7)
