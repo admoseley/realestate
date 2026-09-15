@@ -1,0 +1,171 @@
+# ---------------------------------------------------------------------------
+# Deploy: publish the API image and ship the app to Azure.
+#
+#   pull_request      -> build the API image without pushing, so image and
+#                        action problems surface before merge
+#   push to main      -> publish ghcr.io/admoseley/realestate-api (tagged
+#                        sha-<commit> and latest); then, once the production
+#                        environment's reviewer approves, roll the Container
+#                        App to that image and deploy the frontend
+#   workflow_dispatch -> the same as a push to main, e.g. right after the
+#                        one-time Azure setup
+#
+# Azure access uses GitHub OIDC federation, so no credentials are stored. The
+# deploy job stays skipped until the repository variables AZURE_CLIENT_ID,
+# AZURE_TENANT_ID, and AZURE_SUBSCRIPTION_ID exist (set by
+# scripts/oidc/setup-github-oidc.sh). The image can therefore be published
+# before the Azure environment exists, which infra/ needs for its first apply.
+# The Static Web App deployment token is fetched at runtime and never stored.
+# ---------------------------------------------------------------------------
+name: Deploy
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore: ["infra/**", "**/*.md"]
+  push:
+    branches: [main]
+    paths-ignore: ["infra/**", "**/*.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/admoseley/realestate-api
+  # Resource names created by infra/ (name_prefix "realestate").
+  RESOURCE_GROUP: rg-realestate-prod
+  CONTAINER_APP: ca-realestate-api
+  STATIC_WEB_APP: swa-realestate
+
+jobs:
+  api-image:
+    name: API image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # publish to GHCR with the workflow's own token
+    outputs:
+      image: ${{ steps.ref.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Sign in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          # sha-<full commit> pins each deployment to an exact build. latest
+          # only moves on main; infra/ uses it for the first revision.
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Record the image reference
+        id: ref
+        run: echo "image=${IMAGE}:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy to Azure
+    needs: api-image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AZURE_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    # The environment's required reviewer is the sign-off gate. Its OIDC token
+    # carries the subject environment:production, the only subject the Azure
+    # app registration trusts, so no job outside this environment can sign in.
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Sign in to Azure (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Roll the API to the new image
+        env:
+          NEW_IMAGE: ${{ needs.api-image.outputs.image }}
+        run: |
+          az containerapp update --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" \
+            --image "$NEW_IMAGE" --output none
+
+          # Wait until the new revision passes its startup probe. Startup can
+          # include waiting for a paused database to resume, so allow 6 minutes.
+          for attempt in $(seq 1 36); do
+            read -r latest ready <<<"$(az containerapp show --resource-group "$RESOURCE_GROUP" \
+              --name "$CONTAINER_APP" \
+              --query '[properties.latestRevisionName, properties.latestReadyRevisionName]' -o tsv)"
+            if [ -n "$latest" ] && [ "$latest" = "$ready" ]; then
+              echo "Revision $latest is ready"
+              exit 0
+            fi
+            echo "Waiting for revision ${latest:-?} to become ready (check $attempt of 36)"
+            sleep 10
+          done
+          echo "::error::Revision $latest did not become ready. Check its logs in the Container App."
+          exit 1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
+      # No VITE_API_URL: in Azure the frontend calls /api on its own origin,
+      # and the Static Web App proxies it to the Container App.
+      - name: Build the frontend
+        working-directory: web/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Fetch the Static Web App deployment token
+        id: swa-token
+        run: |
+          token=$(az staticwebapp secrets list --name "$STATIC_WEB_APP" \
+            --resource-group "$RESOURCE_GROUP" --query properties.apiKey -o tsv)
+          echo "::add-mask::$token"
+          echo "value=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the frontend
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          action: upload
+          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.value }}
+          app_location: web/frontend/dist
+          skip_app_build: true
+          skip_api_build: true
+          api_location: ""
+          output_location: ""
