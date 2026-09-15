@@ -40,12 +40,12 @@ Confirm real spend in Cost Management about 48 hours after the first apply.
   (`az login`, then `az account set --subscription <id>`).
 - **Owner** on the subscription. The apply creates role assignments and a
   subscription budget, and registers resource providers.
-- **The API image published and public** at
-  `ghcr.io/admoseley/realestate-api:latest`. The Deploy workflow
-  (`.github/workflows/deploy.yml`) publishes it on every push to `main`, even
-  before Azure is set up. GitHub creates new packages as private, so change
-  the package's visibility to public in its settings before applying. The
-  first Container App revision pulls this image.
+- **The API image published** at `ghcr.io/admoseley/realestate-api:latest`.
+  The Deploy workflow (`.github/workflows/deploy.yml`) publishes it on every
+  push to `main`, even before Azure is set up; the first run published it on
+  2026-09-15. The package can be pulled anonymously, so the Container App needs
+  no registry credentials. If the repository is ever made private, check that
+  the package is still public, or give the Container App registry credentials.
 
 ## First deployment (owner-run)
 
@@ -131,7 +131,8 @@ Then start the first deployment, and approve it when GitHub asks:
 gh workflow run deploy.yml --repo admoseley/realestate --ref main
 ```
 
-Inviting users is part of the sign-in configuration (#9).
+Finally, invite users. The **Security** section of the root README covers the
+roles and the `az staticwebapp users invite` command.
 
 ## Design notes
 
