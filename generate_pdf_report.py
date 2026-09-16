@@ -500,7 +500,10 @@ def build_cover(deals: list[Deal], S: dict,
 
 # ─── Individual property page ─────────────────────────────────────────────────
 
-def build_property_page(d: Deal, S: dict) -> list:
+def build_property_page(d: Deal, S: dict, geocache: dict = GEOCACHE) -> list:
+    # ``geocache`` defaults to the module-level base coordinates for callers that
+    # don't need per-request overrides (e.g. main()). build_and_save_pdf always
+    # passes its own merged dict, so concurrent PDF builds never share state.
     story = []
 
     # ── Property header banner ────────────────────────────────────────────────
@@ -542,7 +545,7 @@ def build_property_page(d: Deal, S: dict) -> list:
 
     # Map image
     map_col = []
-    lat_lon = GEOCACHE.get(d.sale_id)
+    lat_lon = geocache.get(d.sale_id)
     map_img_obj = None
     if lat_lon:
         print(f"  Fetching map for {d.sale_id} ({d.address[:30]})…", flush=True)
@@ -1548,7 +1551,7 @@ def build_and_save_pdf(
     ----------
     deals           : list of analyzed Deal objects (already run through analyze())
     output_path     : destination .pdf path
-    geocache_extra  : {sale_id: (lat, lon)} entries to merge into GEOCACHE for map tiles
+    geocache_extra  : {sale_id: (lat, lon)} entries added on top of the base GEOCACHE for this build only
     report_title    : text shown centered in the orange header bar
     footer_label    : text shown in the page footer (e.g. "Allegheny County Sheriff Sale")
     subtitle        : date/context line on the cover page
@@ -1558,8 +1561,11 @@ def build_and_save_pdf(
     skip_cover      : when True, omit the multi-property cover/leaderboard page (use for
                       single-property share PDFs — starts directly at the property page)
     """
-    if geocache_extra:
-        GEOCACHE.update(geocache_extra)
+    # A per-call dict, never a mutation of the module-level GEOCACHE: that used to
+    # let one build's coordinates leak into a concurrent build's report (#21) once
+    # spot checks started running as background jobs, always under the same "SPOT"
+    # key.
+    geocache = {**GEOCACHE, **(geocache_extra or {})}
 
     _title        = report_title or _DEFAULT_REPORT_TITLE
     _footer       = footer_label or _DEFAULT_FOOTER_LABEL
@@ -1594,7 +1600,7 @@ def build_and_save_pdf(
         if progress_cb:
             progress_cb(i, total, "property")
         print(f"  [{i}/{total}] Building page: {deal.address[:45]}")
-        story += build_property_page(deal, S)
+        story += build_property_page(deal, S, geocache)
 
     print("  Building glossary…")
     story += build_glossary(S)
