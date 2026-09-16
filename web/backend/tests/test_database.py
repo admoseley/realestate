@@ -9,6 +9,12 @@ from database import DatabaseUnavailable, connect_with_retry, is_transient_error
 RESUMING = ("42000", "[Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Database 'realestate' "
             "on server 'sql-realestate' is not currently available. Please retry the connection later. (40613)")
 
+# Real error text captured from a production request that raced a resuming
+# database: pyodbc's own login timeout, not a SQL Server error number, so it
+# isn't caught by the digit-matching regex the way RESUMING above is.
+LOGIN_TIMEOUT = ("HYT00", "[HYT00] [Microsoft][ODBC Driver 18 for SQL Server]"
+                 "[SQL Server]Login timeout expired (0) (SQLDriverConnect)")
+
 
 class FakeOdbcError(Exception):
     pass
@@ -30,6 +36,13 @@ class FakeClock:
 def test_resume_error_is_transient_but_login_failure_is_not():
     assert is_transient_error(FakeOdbcError(*RESUMING))
     assert not is_transient_error(FakeOdbcError("28000", "Login failed for user '<token-identified principal>'. (18456)"))
+
+
+def test_odbc_login_timeout_is_transient():
+    """A request that lands while the database is still resuming can time out
+    at the ODBC level before the server ever returns a SQL error number. This
+    used to skip the retry loop entirely and surface as a raw 500."""
+    assert is_transient_error(FakeOdbcError(*LOGIN_TIMEOUT))
 
 
 def test_retry_succeeds_once_the_database_resumes():
