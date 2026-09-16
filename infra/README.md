@@ -12,7 +12,7 @@ group `rg-realestate-prod` in Central US. It uses remote state in the shared
 | Static Web App (Standard) | `swa-realestate` | Frontend, Microsoft sign-in, invite-only roles, `/api` proxy |
 | Container Apps environment and app | `cae-realestate`, `ca-realestate-api` | The API: 0.5 vCPU, 1 GiB, exactly one replica |
 | User-assigned identity | `id-realestate-api` | The API's access to SQL, Blob Storage, and Key Vault, with no keys or passwords |
-| Azure SQL server and free-offer database | `sql-realestate-<suffix>`, `sqldb-realestate` | Entra-only sign-in. Serverless, auto-pauses after 15 idle minutes, and pauses instead of billing if the monthly free allowance runs out |
+| Azure SQL server and free-offer database | `sql-realestate-<suffix>`, `sqldb-realestate` | Entra-only sign-in. Serverless, auto-pauses after 60 idle minutes (the only delay the free offer allows with this setting), and pauses instead of billing if the monthly free allowance runs out |
 | Storage account and `reports` container | `strealestate<suffix>` | Report PDFs, managed-identity access only |
 | Key Vault | `kv-realestate-<suffix>` | The `resend-api-key` secret |
 | Log Analytics and Application Insights | `log-realestate`, `appi-realestate-api` | Container logs, API telemetry, and audit logs for SQL, Key Vault, and report PDF access. Ingestion capped at 0.25 GB per day |
@@ -54,12 +54,29 @@ Confirm real spend in Cost Management about 48 hours after the first apply.
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars   # then set alert_email
+# azurerm 4 and later need the subscription set explicitly.
+export ARM_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
 terraform init
 terraform plan -out tfplan
 terraform apply tfplan
 ```
 
 The apply pauses 90 seconds so the new role assignments can take effect.
+
+#### If an apply stops partway
+
+Terraform keeps everything it created, so fix the cause and run
+`terraform plan -out tfplan` and `terraform apply tfplan` again.
+
+- **`ManagedEnvironmentNoAvailableCapacityInRegion`.** Azure has no Container
+  Apps capacity in the region right now. Retry later, or set
+  `container_apps_location = "northcentralus"` (or another nearby region) in
+  `terraform.tfvars`.
+- **A network timeout or "connection reset".** The resource may have been
+  created anyway. If `terraform state show <address>` begins with
+  `(tainted)`, and the resource looks healthy in Azure, run
+  `terraform untaint <address>`. Without that, the next plan tries to replace
+  it, which `prevent_destroy` refuses.
 
 ### 2. Store the Resend key
 

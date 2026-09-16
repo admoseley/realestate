@@ -13,6 +13,11 @@
 locals {
   api_port = 8000
 
+  # Container Apps can run out of capacity for new environments in a region
+  # (the first apply hit this in Central US). The environment and API can then
+  # go to a nearby region while everything else stays in var.location.
+  container_apps_location = coalesce(var.container_apps_location, var.location)
+
   sql_connection_string = join(";", [
     "Driver={ODBC Driver 18 for SQL Server}",
     "Server=tcp:${azurerm_mssql_server.main.fully_qualified_domain_name},1433",
@@ -25,7 +30,7 @@ locals {
 
 resource "azurerm_container_app_environment" "main" {
   name                = "cae-${var.name_prefix}"
-  location            = azurerm_resource_group.main.location
+  location            = local.container_apps_location
   resource_group_name = azurerm_resource_group.main.name
 
   # azurerm 5.x requires naming the destination to attach a workspace.

@@ -4,3 +4,6 @@ alert_email = "you@example.com"
 
 # Second apply, once the GoDaddy CNAME from the dns_record output exists:
 # enable_custom_domain = true
+
+# Only if Central US has no Container Apps capacity (ManagedEnvironmentNoAvailableCapacityInRegion):
+# container_apps_location = "northcentralus"
