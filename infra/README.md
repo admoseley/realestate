@@ -54,12 +54,29 @@ Confirm real spend in Cost Management about 48 hours after the first apply.
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars   # then set alert_email
+# azurerm 4 and later need the subscription set explicitly.
+export ARM_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
 terraform init
 terraform plan -out tfplan
 terraform apply tfplan
 ```
 
 The apply pauses 90 seconds so the new role assignments can take effect.
+
+#### If an apply stops partway
+
+Terraform keeps everything it created, so fix the cause and run
+`terraform plan -out tfplan` and `terraform apply tfplan` again.
+
+- **`ManagedEnvironmentNoAvailableCapacityInRegion`.** Azure has no Container
+  Apps capacity in the region right now. Retry later, or set
+  `container_apps_location = "northcentralus"` (or another nearby region) in
+  `terraform.tfvars`.
+- **A network timeout or "connection reset".** The resource may have been
+  created anyway. If `terraform state show <address>` begins with
+  `(tainted)`, and the resource looks healthy in Azure, run
+  `terraform untaint <address>`. Without that, the next plan tries to replace
+  it, which `prevent_destroy` refuses.
 
 ### 2. Store the Resend key
 
