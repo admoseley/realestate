@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { listDeals, clearDeals, updateDealAddress } from "../api/client";
+import { listDeals, clearDeals, updateDealAddress, describeError } from "../api/client";
 import PropertyCard from "../components/PropertyCard";
 import VerdictBadge from "../components/VerdictBadge";
 import ShareModal from "../components/ShareModal";
@@ -38,6 +38,10 @@ export default function Dashboard() {
   const { isAdmin } = useAuth();
   const [deals,       setDeals]       = useState([]);
   const [loading,     setLoading]     = useState(true);
+  // Set only when the initial load itself fails, so a real failure reads as
+  // "couldn't load" rather than silently falling through to "No deals yet" —
+  // which looked exactly like data loss the one time this happened for real.
+  const [loadError,   setLoadError]   = useState(null);
   const [filter,      setFilter]      = useState("ALL");
   const [sortCol,     setSortCol]     = useState("score");
   const [sortAsc,     setSortAsc]     = useState(false);
@@ -72,12 +76,24 @@ export default function Dashboard() {
   const [fcFilter,   setFcFilter]   = useState(false);
   const [muniFilter, setMuniFilter] = useState(new Set());
 
-  useEffect(() => {
+  // Fetches deals; every setState call happens inside a promise callback, not
+  // synchronously in the function body, so calling this directly from the
+  // effect below doesn't trigger cascading renders. The Retry button resets
+  // loading/loadError itself before calling this.
+  const loadDeals = () => {
     listDeals(0, 500)
-      .then(data => setDeals(data))
-      .catch(() => {})
+      .then(data => { setDeals(data); setLoadError(null); })
+      .catch(err => setLoadError(describeError(err, "Couldn't load your deals.")))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadDeals(); }, []);
+
+  const retryLoadDeals = () => {
+    setLoading(true);
+    setLoadError(null);
+    loadDeals();
+  };
 
   useEffect(() => {
     localStorage.setItem("ewp_favorites", JSON.stringify([...favorites]));
@@ -237,6 +253,18 @@ export default function Dashboard() {
       {loading ? (
         <div className="bg-white rounded-xl border border-brand-line p-12 text-center text-gray-400">
           Loading deals…
+        </div>
+      ) : loadError ? (
+        <div className="bg-white rounded-xl border border-brand-line p-12 text-center space-y-3">
+          <p className="text-3xl">⚠</p>
+          <p className="text-brand-charcoal font-semibold">Couldn't load your deals</p>
+          <p className="text-sm text-red-700 max-w-md mx-auto">{loadError}</p>
+          <button
+            onClick={retryLoadDeals}
+            className="bg-brand-orange text-white font-bold px-6 py-2 rounded-xl hover:bg-brand-dark transition-colors text-sm"
+          >
+            Retry
+          </button>
         </div>
       ) : deals.length === 0 ? (
         <div className="bg-white rounded-xl border border-brand-line p-12 text-center space-y-3">
