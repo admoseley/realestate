@@ -123,18 +123,29 @@ jobs:
 
           # Wait until the new revision passes its startup probe. Startup can
           # include waiting for a paused database to resume, so allow 6 minutes.
+          #
+          # Each value is queried on its own. Asking for both revision names in
+          # one "-o tsv" call prints them on separate lines, so a single `read`
+          # left the ready name empty and this check could never pass (#28).
+          show() {
+            az containerapp show --resource-group "$RESOURCE_GROUP" --name "$CONTAINER_APP" \
+              --query "$1" -o tsv
+          }
+          latest=$(show properties.latestRevisionName)
           for attempt in $(seq 1 36); do
-            read -r latest ready <<<"$(az containerapp show --resource-group "$RESOURCE_GROUP" \
-              --name "$CONTAINER_APP" \
-              --query '[properties.latestRevisionName, properties.latestReadyRevisionName]' -o tsv)"
-            if [ -n "$latest" ] && [ "$latest" = "$ready" ]; then
+            ready=$(show properties.latestReadyRevisionName)
+            if [ -n "$latest" ] && [ "$ready" = "$latest" ]; then
               echo "Revision $latest is ready"
               exit 0
             fi
-            echo "Waiting for revision ${latest:-?} to become ready (check $attempt of 36)"
+            # Health is shown for information only: a slow cold start can look
+            # unhealthy for a while, so only the timeout fails the step.
+            health=$(az containerapp revision show --resource-group "$RESOURCE_GROUP" \
+              --name "$CONTAINER_APP" --revision "$latest" --query properties.healthState -o tsv)
+            echo "Waiting for revision $latest to become ready (health: ${health:-unknown}; check $attempt of 36)"
             sleep 10
           done
-          echo "::error::Revision $latest did not become ready. Check its logs in the Container App."
+          echo "::error::Revision $latest did not become ready within 6 minutes. Check its logs in the Container App."
           exit 1
 
       - uses: actions/setup-node@v7
