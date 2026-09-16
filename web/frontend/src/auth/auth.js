@@ -16,9 +16,9 @@ export const loginUrl = (returnTo = window.location.pathname + window.location.s
 
 export const LOGOUT_URL = "/.auth/logout?post_logout_redirect_uri=/";
 
-// Outside Static Web Apps (the Vite dev server, or the old Netlify site until
-// the cutover) there is no /.auth endpoint, and the request falls through to
-// index.html. The interface then runs without sign-in, as it always has there.
+// Outside Static Web Apps (only the Vite dev server now) there is no /.auth
+// endpoint, and the request falls through to index.html. The interface then
+// runs without sign-in, as it always has there.
 const LOCAL = { status: "local", user: "Local development", roles: [...APP_ROLES] };
 
 /** Ask Static Web Apps who is signed in. */

@@ -24,10 +24,13 @@ buy-and-hold analysis, and produces branded PDF reports that can be shared by em
 | Analysis engine | Pure Python scripts shared by the API and CLI | repo root (`investment_analyzer.py`, `sheriff_sale_analyzer.py`, `spot_check.py`, `generate_pdf_report.py`) |
 | Email | Resend | `web/backend/mailer.py` (the only module that sends mail), used by `web/backend/routers/share.py` |
 
-> **Hosting migration in progress.** The app currently runs on Netlify (frontend) and
-> Render (API). It is moving to Azure — Static Web Apps with Microsoft sign-in,
-> Container Apps, Azure SQL, and Blob Storage — tracked in issues #2–#10.
+> **Live on Azure** at
+> [realestate-analysis.app.estellawilson.com](https://realestate-analysis.app.estellawilson.com)
+> — Static Web Apps with Microsoft sign-in, a Container App running the API,
+> Azure SQL (the serverless free offer), and Blob Storage for report PDFs.
 > The Azure environment is defined in Terraform under [`infra/`](infra/README.md).
+> The app previously ran on Netlify and Render; both were decommissioned after
+> the migration (issues #2–#10).
 
 ## Local development
 
@@ -246,7 +249,6 @@ run. The deploy job stays skipped until the one-time setup is done:
    `github-realestate` identity (Contributor on `rg-realestate-prod` only),
    the repository variables, and the `production` environment.
 
-Until the cutover, merges to `main` also auto-deploy to Render and Netlify.
 
 ## Contributing
 
