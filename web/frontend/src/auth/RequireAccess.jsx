@@ -38,6 +38,12 @@ export default function RequireAccess({ children }) {
           invite-only. Ask the owner for an invitation, open its link, and sign in with this
           Microsoft account.
         </p>
+        {/* Static Web Apps adds roles to a session only at sign-in, so a session
+            started before the invitation was accepted stays role-less. */}
+        <p className="text-xs text-gray-500">
+          Already opened your invitation? Access starts with a fresh sign-in: sign out, then sign
+          in again.
+        </p>
         <a href={LOGOUT_URL} className="inline-block text-sm font-semibold text-brand-orange hover:underline">
           Sign out
         </a>
