@@ -1,7 +1,18 @@
 variable "location" {
-  description = "Azure region for every resource. Central US hosts Static Web Apps, Container Apps, and the Azure SQL free offer."
+  description = "Azure region for every resource (the Container Apps environment can be overridden). Central US hosts Static Web Apps, Container Apps, and the Azure SQL free offer."
   type        = string
   default     = "centralus"
+}
+
+variable "container_apps_location" {
+  description = <<-EOT
+    Region for the Container Apps environment and the API, if not location.
+    Set this to a nearby region (for example northcentralus) when location
+    reports ManagedEnvironmentNoAvailableCapacityInRegion. The Static Web App's
+    linked backend follows automatically.
+  EOT
+  type        = string
+  default     = null
 }
 
 variable "name_prefix" {
