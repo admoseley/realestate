@@ -12,7 +12,7 @@ group `rg-realestate-prod` in Central US. It uses remote state in the shared
 | Static Web App (Standard) | `swa-realestate` | Frontend, Microsoft sign-in, invite-only roles, `/api` proxy |
 | Container Apps environment and app | `cae-realestate`, `ca-realestate-api` | The API: 0.5 vCPU, 1 GiB, exactly one replica |
 | User-assigned identity | `id-realestate-api` | The API's access to SQL, Blob Storage, and Key Vault, with no keys or passwords |
-| Azure SQL server and free-offer database | `sql-realestate-<suffix>`, `sqldb-realestate` | Entra-only sign-in. Serverless, auto-pauses after 15 idle minutes, and pauses instead of billing if the monthly free allowance runs out |
+| Azure SQL server and free-offer database | `sql-realestate-<suffix>`, `sqldb-realestate` | Entra-only sign-in. Serverless, auto-pauses after 60 idle minutes (the only delay the free offer allows with this setting), and pauses instead of billing if the monthly free allowance runs out |
 | Storage account and `reports` container | `strealestate<suffix>` | Report PDFs, managed-identity access only |
 | Key Vault | `kv-realestate-<suffix>` | The `resend-api-key` secret |
 | Log Analytics and Application Insights | `log-realestate`, `appi-realestate-api` | Container logs, API telemetry, and audit logs for SQL, Key Vault, and report PDF access. Ingestion capped at 0.25 GB per day |

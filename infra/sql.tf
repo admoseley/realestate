@@ -91,9 +91,13 @@ resource "azapi_resource" "sql_database" {
       capacity = 2
     }
     properties = {
-      useFreeLimit                     = true
-      freeLimitExhaustionBehavior      = "AutoPause"
-      autoPauseDelay                   = 15 # minutes idle before pausing (the minimum)
+      useFreeLimit                = true
+      freeLimitExhaustionBehavior = "AutoPause"
+      # autoPauseDelay is left unset. With AutoPause as the exhaustion behavior,
+      # Azure accepts only the default: pause after 60 idle minutes. (A first
+      # apply with 15 failed with ProvisioningDisabled.) While idle and online,
+      # the database uses minCapacity, so each use costs up to 1,800 free
+      # vCore-seconds of idle time before it pauses.
       minCapacity                      = 0.5
       maxSizeBytes                     = 34359738368 # 32 GB, the free data allowance
       requestedBackupStorageRedundancy = "Local"     # the only option the free offer allows
