@@ -53,8 +53,20 @@ class DatabaseUnavailable(RuntimeError):
 TRANSIENT_SQL_ERRORS = {4221, 10928, 10929, 40197, 40501, 40613, 49918, 49919, 49920}
 _ERROR_NUMBER = re.compile(r"\b(\d{4,5})\b")
 
+# ODBC-level SQLSTATEs, not SQL Server error numbers: pyodbc reports these
+# for its own client-side connection failures, which the regex above can't
+# see (they're not a plain 4-5 digit number in the message). HYT00 is what
+# the driver raises when its login attempt times out before a resuming
+# (auto-paused) database finishes waking up — observed in production: a
+# request landed mid-resume, this error skipped the retry loop entirely, and
+# surfaced as a raw 500 instead of the designed 503 + Retry-After.
+_TRANSIENT_ODBC_SQLSTATES = {"HYT00"}
+
 
 def is_transient_error(exc: BaseException) -> bool:
+    sqlstate = exc.args[0] if exc.args else None
+    if isinstance(sqlstate, str) and sqlstate in _TRANSIENT_ODBC_SQLSTATES:
+        return True
     message = " ".join(str(arg) for arg in exc.args) if exc.args else str(exc)
     return any(int(number) in TRANSIENT_SQL_ERRORS for number in _ERROR_NUMBER.findall(message))
 
