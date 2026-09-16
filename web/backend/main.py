@@ -75,9 +75,9 @@ app.add_middleware(
     allow_headers     = ["*"],
     # Browsers hide non-safelisted response headers from cross-origin callers.
     # The frontend reads Retry-After to decide whether a 503 means "database
-    # resuming, try again", so it has to be exposed while the frontend and API
-    # are on different origins (Netlify → Render, and local setups without the
-    # Vite proxy). Behind Static Web Apps they share an origin and CORS is moot.
+    # resuming, try again", so it has to be exposed for local setups without
+    # the Vite proxy. Behind Static Web Apps (production) they share an origin
+    # and CORS is moot.
     expose_headers    = ["Retry-After"],
 )
 
